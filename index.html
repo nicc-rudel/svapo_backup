@@ -1,0 +1,2026 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Svapo Manager Cloud</title>
+    
+    <!-- PWA Settings -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#ffffff">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>☁️</text></svg>">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        slate: {
+                            850: '#1e293b',
+                            950: '#020617',
+                        }
+                    },
+                    animation: {
+                        'bounce-slow': 'bounce 3s infinite',
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Excel Export Library (SheetJS) -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    
+    <!-- React & Babel -->
+    <script type="importmap">
+    {
+        "imports": {
+            "react": "https://esm.sh/react@18.2.0",
+            "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+            "lucide-react": "https://esm.sh/lucide-react@0.263.1",
+            "firebase/app": "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js",
+            "firebase/firestore": "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js",
+            "firebase/auth": "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js"
+        }
+    }
+    </script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-in { animation: fadeIn 0.3s ease-out forwards; }
+        .pb-safe { padding-bottom: env(safe-area-inset-bottom, 20px); }
+        body { overscroll-behavior-y: none; }
+        
+        /* Dark mode transitions */
+        body, div, p, h1, h2, h3, button, li, input, select { transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease; }
+    </style>
+</head>
+<body class="bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 selection:bg-indigo-100 dark:selection:bg-indigo-900/50">
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useMemo, useRef } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { 
+            Plus, Trash2, Check, X, ArrowLeft, Share2, DollarSign, Users, 
+            ShoppingBag, Wallet, Link as LinkIcon, Wind, 
+            LogOut, TrendingUp, History, User, ShoppingCart, ExternalLink, CheckSquare, Square, Lock, Beaker, ShoppingBasket, Send, List, FileSpreadsheet, Bell, BellRing, KeyRound, PiggyBank, ArrowUpRight, CloudLightning, MessageCircle, AlertCircle, RefreshCcw, MoreHorizontal, Moon, Sun, Monitor, AlertTriangle, Info, ChevronDown, Calendar, Droplet, CheckCircle2, Eye, EyeOff, CheckCircle, Package, Archive, Calculator, Banknote, ArrowRight, Loader2, Save, Settings, RotateCcw, Heart, Star, BarChart3, Box,
+            // NUOVE ICONE PACCHETTO SVAPO
+            Cloud, Zap, Droplets, FlaskConical, Sparkles
+        } from 'lucide-react';
+        
+        // --- FIREBASE IMPORTS ---
+        import { initializeApp } from 'firebase/app';
+        import { getFirestore, collection, doc, setDoc, onSnapshot, addDoc, updateDoc, deleteDoc, getDocs, writeBatch, arrayUnion, arrayRemove } from 'firebase/firestore';
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+
+        // --- FIREBASE CONFIGURATION ---
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+            apiKey: "AIzaSyDwpBj5NXy4iZkOKXMEMd_CY1_1cMMRx-s",
+              authDomain: "svapomenager.firebaseapp.com",
+              projectId: "svapomenager",
+              storageBucket: "svapomenager.firebasestorage.app",
+              messagingSenderId: "512019732894",
+              appId: "1:512019732894:web:d4fb58561b3fbea1ff1e8f",
+              measurementId: "G-VDCNTT6WHM"
+        };
+
+        let app, db, auth;
+        const isConfigured = firebaseConfig.apiKey !== "TUO_API_KEY";
+        
+        if (isConfigured) {
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+        }
+        
+        const APP_ID = typeof __app_id !== 'undefined' ? __app_id : 'svapo-manager-default';
+
+        // --- DEFAULT CONFIG ---
+        const DEFAULT_PRICING = {
+            nicotineBottlePrice: 2.50,
+            nicotineBottleMg: 200,
+            nicotineBottleVol: 10,
+            defaultAromaPrice: 6.00,
+            aromaVol: 10,
+            basePricePerMl: 0.013
+        };
+
+        // --- HOOK PER IL TEMA (DARK MODE) ---
+        const useTheme = () => {
+            const [theme, setTheme] = useState(localStorage.getItem('theme') || 'auto');
+
+            useEffect(() => {
+                const root = window.document.documentElement;
+                const isDark = theme === 'dark' || (theme === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                
+                if (isDark) {
+                    root.classList.add('dark');
+                    document.querySelector('meta[name="theme-color"]').setAttribute('content', '#020617');
+                } else {
+                    root.classList.remove('dark');
+                    document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff');
+                }
+                localStorage.setItem('theme', theme);
+            }, [theme]);
+
+            return [theme, setTheme];
+        };
+
+        // --- COMPONENTE MODALE DI CONFERMA ---
+        const ConfirmDialog = ({ isOpen, title, message, onConfirm, onCancel, confirmText = "Conferma", isDanger = false }) => {
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl max-w-sm w-full overflow-hidden border dark:border-slate-700 transform scale-100 transition-all animate-in zoom-in-95 duration-200">
+                        <div className="p-6">
+                            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2 flex items-center gap-2">
+                                {isDanger && <AlertTriangle className="text-red-500" />} {title}
+                            </h3>
+                            <p className="text-slate-500 dark:text-slate-400 text-sm leading-relaxed">{message}</p>
+                        </div>
+                        <div className="bg-slate-50 dark:bg-slate-800 p-4 flex gap-3 justify-end border-t dark:border-slate-700">
+                            <button onClick={onCancel} className="px-5 py-2.5 rounded-xl text-slate-600 dark:text-slate-300 font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition">Annulla</button>
+                            <button 
+                                onClick={onConfirm} 
+                                className={`px-5 py-2.5 rounded-xl text-white font-bold transition shadow-lg ${isDanger ? 'bg-red-500 hover:bg-red-600 shadow-red-500/30' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/30'}`}
+                            >
+                                {confirmText}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- MODALE AGGIUNTA PREFERITI ---
+        const AddToFavoriteModal = ({ isOpen, onClose, onConfirm, item }) => {
+            const [name, setName] = useState('');
+            useEffect(() => { if(isOpen) setName(''); }, [isOpen]);
+
+            if (!isOpen) return null;
+
+            return (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-sm p-6 shadow-2xl border dark:border-slate-700 animate-in zoom-in-95">
+                        <h3 className="text-xl font-bold mb-4 flex items-center gap-2 text-pink-500"><Heart fill="currentColor" /> Salva nei Preferiti</h3>
+                        <p className="text-sm text-slate-500 mb-4">Dai un nome personalizzato a questo aroma per ritrovarlo facilmente.</p>
+                        <input 
+                            autoFocus
+                            type="text" 
+                            className="w-full bg-slate-100 dark:bg-slate-800 p-3 rounded-xl mb-4 font-bold outline-none ring-2 ring-transparent focus:ring-pink-500 transition-all" 
+                            placeholder="Es. Il mio tabaccoso..." 
+                            value={name} 
+                            onChange={e => setName(e.target.value)} 
+                        />
+                        <div className="flex gap-3">
+                            <button onClick={onClose} className="flex-1 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">Annulla</button>
+                            <button 
+                                onClick={() => { if(name.trim()) onConfirm(name); }} 
+                                disabled={!name.trim()}
+                                className="flex-1 py-3 rounded-xl font-bold bg-pink-500 text-white hover:bg-pink-600 shadow-lg shadow-pink-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Salva
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- PRICING MODAL ---
+        const PricingModal = ({ isOpen, onClose, currentPricing, onSave }) => {
+            const [form, setForm] = useState(currentPricing);
+
+            useEffect(() => { setForm(currentPricing); }, [currentPricing, isOpen]);
+
+            if (!isOpen) return null;
+
+            const handleChange = (field, value) => {
+                setForm(prev => ({...prev, [field]: parseFloat(value) || 0}));
+            };
+
+            return (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-sm p-6 shadow-2xl border dark:border-slate-700 animate-in zoom-in-95">
+                        <h3 className="text-xl font-bold mb-4 flex items-center gap-2 text-slate-900 dark:text-white"><Settings /> Configurazione Prezzi</h3>
+                        
+                        <div className="space-y-4">
+                            <div>
+                                <label className="text-xs font-bold text-slate-400 uppercase">Costo Boccetta Nicotina (€)</label>
+                                <input type="number" step="0.01" className="w-full bg-slate-100 dark:bg-slate-800 p-3 rounded-xl mt-1 font-bold" value={form.nicotineBottlePrice} onChange={e => handleChange('nicotineBottlePrice', e.target.value)} />
+                                <p className="text-[10px] text-slate-400 mt-1">Attuale: {currentPricing.nicotineBottleMg}mg in {currentPricing.nicotineBottleVol}ml</p>
+                            </div>
+                            
+                            <div>
+                                <label className="text-xs font-bold text-slate-400 uppercase">Costo Base Neutra (€/ml)</label>
+                                <input type="number" step="0.001" className="w-full bg-slate-100 dark:bg-slate-800 p-3 rounded-xl mt-1 font-bold" value={form.basePricePerMl} onChange={e => handleChange('basePricePerMl', e.target.value)} />
+                                <p className="text-[10px] text-slate-400 mt-1">Es: 0.013 = 13€ al Litro</p>
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-bold text-slate-400 uppercase">Costo Aroma Default (€)</label>
+                                <input type="number" step="0.01" className="w-full bg-slate-100 dark:bg-slate-800 p-3 rounded-xl mt-1 font-bold" value={form.defaultAromaPrice} onChange={e => handleChange('defaultAromaPrice', e.target.value)} />
+                            </div>
+                        </div>
+
+                        <div className="flex gap-3 mt-6">
+                            <button onClick={onClose} className="flex-1 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">Annulla</button>
+                            <button onClick={() => onSave(form)} className="flex-1 py-3 rounded-xl font-bold bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-500/30">Salva</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- COMPONENTI NUOVI (GESTORE & UTENTE) ---
+
+        // 1. Calcolatore di Miscelazione (Gestore)
+        const MixingCalculator = ({ onBack }) => {
+            const [totalMl, setTotalMl] = useState(100);
+            const [targetNic, setTargetNic] = useState(3);
+            const [aromaPct, setAromaPct] = useState(10);
+            const [nicStrength, setNicStrength] = useState(20);
+
+            const result = useMemo(() => {
+                const aromaMl = (totalMl * aromaPct) / 100;
+                const nicMl = (totalMl * targetNic) / nicStrength;
+                const baseMl = totalMl - aromaMl - nicMl;
+                return { aromaMl, nicMl, baseMl };
+            }, [totalMl, targetNic, aromaPct, nicStrength]);
+
+            return (
+                <div className="pb-20 animate-in p-4">
+                    <div className="flex items-center gap-2 mb-6">
+                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"><ArrowLeft/></button>
+                        <h2 className="text-xl font-bold">Calcolatore Mix</h2>
+                    </div>
+                    <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border dark:border-slate-700 space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                            <div><label className="text-xs uppercase text-slate-400 font-bold">Totale (ml)</label><input type="number" value={totalMl} onChange={e=>setTotalMl(e.target.value)} className="w-full bg-slate-100 dark:bg-slate-700 p-2 rounded-lg mt-1" /></div>
+                            <div><label className="text-xs uppercase text-slate-400 font-bold">Nicotina Target</label><input type="number" value={targetNic} onChange={e=>setTargetNic(e.target.value)} className="w-full bg-slate-100 dark:bg-slate-700 p-2 rounded-lg mt-1" /></div>
+                            <div><label className="text-xs uppercase text-slate-400 font-bold">Aroma (%)</label><input type="number" value={aromaPct} onChange={e=>setAromaPct(e.target.value)} className="w-full bg-slate-100 dark:bg-slate-700 p-2 rounded-lg mt-1" /></div>
+                            <div><label className="text-xs uppercase text-slate-400 font-bold">Forza Nicotina</label><input type="number" value={nicStrength} onChange={e=>setNicStrength(e.target.value)} className="w-full bg-slate-100 dark:bg-slate-700 p-2 rounded-lg mt-1" /></div>
+                        </div>
+                        <div className="mt-6 pt-6 border-t dark:border-slate-700">
+                            <h3 className="text-lg font-bold mb-3">Risultato Ricetta:</h3>
+                            <div className="space-y-2 text-sm">
+                                <div className="flex justify-between p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-blue-700 dark:text-blue-300"><span>Base Neutra</span><span className="font-bold">{result.baseMl.toFixed(1)} ml</span></div>
+                                <div className="flex justify-between p-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg text-purple-700 dark:text-purple-300"><span>Nicotina ({Math.ceil(result.nicMl/10)} boccette)</span><span className="font-bold">{result.nicMl.toFixed(1)} ml</span></div>
+                                <div className="flex justify-between p-2 bg-orange-50 dark:bg-orange-900/20 rounded-lg text-orange-700 dark:text-orange-300"><span>Aroma</span><span className="font-bold">{result.aromaMl.toFixed(1)} ml</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // 2. Magazzino (Gestore)
+        const WarehouseManager = ({ onBack }) => {
+            const [items, setItems] = useState([]);
+            const [newItem, setNewItem] = useState('');
+            const [qty, setQty] = useState(1);
+
+            useEffect(() => {
+                const unsub = onSnapshot(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'warehouse'), (s) => {
+                    if (s.exists()) setItems(s.data().items || []);
+                });
+                return () => unsub();
+            }, []);
+
+            const handleAdd = async (e) => {
+                e.preventDefault();
+                if(!newItem) return;
+                const item = { id: Date.now(), name: newItem, qty: parseInt(qty) };
+                await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'warehouse'), { items: arrayUnion(item) });
+                setNewItem(''); setQty(1);
+            };
+
+            const handleDelete = async (item) => {
+                await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'warehouse'), { items: arrayRemove(item) });
+            };
+
+            return (
+                <div className="pb-20 animate-in p-4">
+                    <div className="flex items-center gap-2 mb-6">
+                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"><ArrowLeft/></button>
+                        <h2 className="text-xl font-bold">Magazzino Scorte</h2>
+                    </div>
+                    <form onSubmit={handleAdd} className="flex gap-2 mb-6">
+                        <input type="text" placeholder="Oggetto (es. Base 50/50)" className="flex-1 bg-white dark:bg-slate-800 p-3 rounded-xl border dark:border-slate-700" value={newItem} onChange={e=>setNewItem(e.target.value)} />
+                        <input type="number" className="w-16 bg-white dark:bg-slate-800 p-3 rounded-xl border dark:border-slate-700" value={qty} onChange={e=>setQty(e.target.value)} />
+                        <button type="submit" className="bg-indigo-600 text-white p-3 rounded-xl"><Plus/></button>
+                    </form>
+                    <div className="space-y-2">
+                        {items.map(item => (
+                            <div key={item.id} className="bg-white dark:bg-slate-800 p-4 rounded-xl flex justify-between items-center shadow-sm border dark:border-slate-700">
+                                <div className="flex items-center gap-3">
+                                    <Box size={20} className="text-indigo-500" />
+                                    <div><p className="font-bold">{item.name}</p><p className="text-xs text-slate-400">Quantità: {item.qty}</p></div>
+                                </div>
+                                <button onClick={() => handleDelete(item)} className="text-red-400 hover:bg-red-50 p-2 rounded-lg"><Trash2 size={18}/></button>
+                            </div>
+                        ))}
+                        {items.length === 0 && <p className="text-center text-slate-400">Magazzino vuoto.</p>}
+                    </div>
+                </div>
+            );
+        };
+
+        // 5. Aromi Preferiti (Ex Wishlist) (Utenti)
+        const FavoritesSection = ({ onBack, currentUser, onAddToActiveOrder }) => {
+            const [items, setItems] = useState([]);
+
+            useEffect(() => {
+                const unsub = onSnapshot(doc(db, 'artifacts', APP_ID, 'public', 'data', 'favorites', currentUser), (s) => {
+                    if(s.exists()) setItems(s.data().items || []);
+                });
+                return () => unsub();
+            }, [currentUser]);
+
+            const remove = async (item) => {
+                const ref = doc(db, 'artifacts', APP_ID, 'public', 'data', 'favorites', currentUser);
+                await updateDoc(ref, { items: arrayRemove(item) });
+            };
+
+            return (
+                <div className="pb-20 animate-in p-4">
+                    <div className="flex items-center gap-2 mb-6">
+                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"><ArrowLeft/></button>
+                        <h2 className="text-xl font-bold">Aromi Preferiti</h2>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 gap-3">
+                        {items.map(i => (
+                            <div key={i.id} className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border dark:border-slate-700">
+                                <div className="flex justify-between items-start mb-2">
+                                    <div>
+                                        <h3 className="font-bold text-lg text-slate-800 dark:text-white">{i.name}</h3>
+                                        <a href={i.link} target="_blank" className="text-xs text-blue-500 hover:underline truncate block max-w-[200px]">{i.link}</a>
+                                        <p className="text-xs text-slate-400 mt-1">{i.liquidMl}ml • {i.nicotineMl}nic • {i.vapeType}</p>
+                                    </div>
+                                    <button onClick={()=>remove(i)} className="text-slate-400 hover:text-red-500 p-1"><Trash2 size={18}/></button>
+                                </div>
+                                <button 
+                                    onClick={() => onAddToActiveOrder(i)}
+                                    className="w-full mt-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-2 hover:bg-indigo-100 dark:hover:bg-indigo-900/50"
+                                >
+                                    <Plus size={14}/> Aggiungi all'ordine attivo
+                                </button>
+                            </div>
+                        ))}
+                        {items.length === 0 && (
+                            <div className="text-center py-10 text-slate-400">
+                                <Heart size={48} className="mx-auto mb-3 opacity-20"/>
+                                <p>Nessun aroma preferito.</p>
+                                <p className="text-xs mt-1">Aggiungili cliccando il cuore sui tuoi acquisti recenti.</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        // 6. Statistiche Avanzate (Utenti)
+        const UserStatistics = ({ orders, currentUser, onBack }) => {
+            const stats = useMemo(() => {
+                let totalSpent = 0;
+                let itemsCount = 0;
+                const typeCounts = {};
+                
+                orders.forEach(o => {
+                    (o.items || []).filter(i => i.person === currentUser).forEach(i => {
+                        totalSpent += (parseFloat(i.price) || 0);
+                        itemsCount++;
+                        const type = i.vapeType || 'Altro';
+                        typeCounts[type] = (typeCounts[type] || 0) + 1;
+                    });
+                });
+                return { totalSpent, itemsCount, typeCounts };
+            }, [orders, currentUser]);
+
+            return (
+                <div className="pb-20 animate-in p-4">
+                    <div className="flex items-center gap-2 mb-6">
+                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"><ArrowLeft/></button>
+                        <h2 className="text-xl font-bold">Le tue Statistiche</h2>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 mb-6">
+                        <div className="bg-blue-500 text-white p-5 rounded-2xl shadow-lg">
+                            <p className="text-blue-100 text-sm mb-1">Spesa Totale</p>
+                            <p className="text-3xl font-bold">€{stats.totalSpent.toFixed(2)}</p>
+                        </div>
+                        <div className="bg-indigo-500 text-white p-5 rounded-2xl shadow-lg">
+                            <p className="text-indigo-100 text-sm mb-1">Articoli Presi</p>
+                            <p className="text-3xl font-bold">{stats.itemsCount}</p>
+                        </div>
+                    </div>
+                    <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border dark:border-slate-700">
+                        <h3 className="font-bold mb-4">Preferenze di Svapo</h3>
+                        <div className="space-y-3">
+                            {Object.entries(stats.typeCounts).map(([type, count]) => (
+                                <div key={type}>
+                                    <div className="flex justify-between text-sm mb-1">
+                                        <span>{type}</span>
+                                        <span className="font-bold">{count}</span>
+                                    </div>
+                                    <div className="h-2 w-full bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                                        <div className="h-full bg-blue-500" style={{width: `${(count / stats.itemsCount) * 100}%`}}></div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- COMPONENTI NAVIGAZIONE ---
+        const NavButton = ({ icon: Icon, label, active, onClick }) => (
+            <button onClick={onClick} className={`flex flex-col items-center gap-1 w-16 transition-all duration-200 ${active ? 'text-blue-600 dark:text-blue-400 scale-110' : 'text-slate-400 dark:text-slate-500'}`}>
+                <Icon size={24} className={active ? "fill-blue-100 dark:fill-blue-900" : ""} />
+                {active && <span className="text-[10px] font-bold mt-1">{label}</span>}
+            </button>
+        );
+
+        const NavButtonDesktop = ({ icon: Icon, label, active, onClick }) => (
+            <button onClick={onClick} className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors font-medium text-sm ${active ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-white/50 dark:hover:bg-slate-800'}`}>
+                <Icon size={18} /><span>{label}</span>
+            </button>
+        );
+
+        // --- SUB-COMPONENT: SHOPPING ITEM ---
+        const ShoppingItem = ({ item, toggleBoughtStatus, updateItemPrice }) => {
+            const [showOther, setShowOther] = useState(false);
+
+            return (
+                <div className="flex flex-col bg-slate-50 dark:bg-slate-700/50 p-4 rounded-xl text-sm border dark:border-slate-600 mb-2 shadow-sm">
+                    {/* Header Item: Persona + Toggle Bought */}
+                    <div className="flex justify-between items-center mb-3">
+                         <span className="font-bold text-lg text-slate-800 dark:text-slate-100">{item.person}</span>
+                         <button 
+                            onClick={() => toggleBoughtStatus(item.orderId, item.id)} 
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${item.bought 
+                                ? 'bg-emerald-500 text-white border-emerald-500 shadow-emerald-500/30 shadow-md' 
+                                : 'bg-white dark:bg-slate-700 dark:text-white border-slate-300 dark:border-slate-500 hover:bg-slate-100 dark:hover:bg-slate-600'}`}
+                        >
+                            {item.bought ? <CheckSquare size={16}/> : <Square size={16}/>} {item.bought ? 'PRESO' : 'DA PRENDERE'}
+                        </button>
+                    </div>
+
+                    {/* Link Prodotto (Se presente) */}
+                    {item.link && (
+                        <div className="mb-3">
+                            <a href={item.link} target="_blank" className="flex items-center gap-2 text-xs bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-3 py-2 rounded-lg font-bold w-full truncate border border-blue-100 dark:border-blue-900/50 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors">
+                                <ExternalLink size={14} className="flex-shrink-0" /> 
+                                <span className="truncate">{item.link}</span>
+                            </a>
+                        </div>
+                    )}
+
+                    {/* Specifiche Prodotto Grandi */}
+                    <div className="flex flex-wrap gap-2 mb-2">
+                        {item.liquidMl && (
+                            <div className="bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 px-3 py-1.5 rounded-lg font-bold border border-blue-200 dark:border-blue-800 flex items-center gap-1">
+                                <Droplets size={14} /> {item.liquidMl}ml
+                            </div>
+                        )}
+                        {item.nicotineMl && (
+                            <div className="bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-200 px-3 py-1.5 rounded-lg font-bold border border-purple-200 dark:border-purple-800 flex items-center gap-1">
+                                <Zap size={14} /> {item.nicotineMl}
+                            </div>
+                        )}
+                        {item.vapeType && (
+                            <div className="bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg font-bold border border-slate-300 dark:border-slate-500">
+                                {item.vapeType}
+                            </div>
+                        )}
+                    </div>
+                    
+                    {/* Sezione Altro (Toggle) */}
+                    {item.otherItems && (
+                        <div className="mt-1">
+                            <button 
+                                onClick={() => setShowOther(!showOther)} 
+                                className="text-xs bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 px-3 py-1.5 rounded-lg font-bold flex items-center gap-2 border border-orange-200 dark:border-orange-800 hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors w-full md:w-auto justify-center md:justify-start"
+                            >
+                                <Sparkles size={14}/> {showOther ? 'Nascondi Altro' : 'Vedi Altro'} {showOther ? <ChevronDown size={14} className="rotate-180"/> : <ChevronDown size={14}/>}
+                            </button>
+                            {showOther && (
+                                <div className="mt-2 p-3 bg-orange-50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-900/30 rounded-lg text-sm text-orange-900 dark:text-orange-100 animate-in fade-in slide-in-from-top-2">
+                                    <p className="font-bold mb-1 text-xs uppercase opacity-70">Note aggiuntive:</p>
+                                    {item.otherItems}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* MODIFICA PREZZO NELLA LISTA SPESA */}
+                    <div className="mt-3 pt-3 border-t dark:border-slate-600 flex justify-end items-center gap-2">
+                        <label className="text-xs font-bold text-slate-400 uppercase">Prezzo (€)</label>
+                        <input 
+                            type="number" 
+                            step="0.01" 
+                            inputMode="decimal"
+                            className="w-24 bg-white dark:bg-slate-900 border dark:border-slate-500 rounded-lg px-2 py-1.5 text-right font-mono font-bold text-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none" 
+                            value={item.price} 
+                            onChange={(e) => updateItemPrice(item.orderId, item.id, e.target.value)} 
+                        />
+                    </div>
+                </div>
+            );
+        };
+
+        // --- COMPONENTI REPORT ---
+
+        const MonthlyReport = ({ orders, currentUser, onBack }) => {
+            const data = useMemo(() => {
+                const groups = {};
+                orders.forEach(order => {
+                    const [day, month, year] = order.date.split('/');
+                    const key = `${month}/${year}`;
+                    if(!groups[key]) groups[key] = { total: 0, items: [] };
+                    
+                    (order.items || []).forEach(item => {
+                        if(item.person === currentUser) {
+                            groups[key].total += (parseFloat(item.price) || 0);
+                            groups[key].items.push({...item, date: order.date, title: order.title});
+                        }
+                    });
+                });
+                return Object.entries(groups).sort((a,b) => {
+                    const [ma, ya] = a[0].split('/');
+                    const [mb, yb] = b[0].split('/');
+                    return yb - ya || mb - ma;
+                });
+            }, [orders, currentUser]);
+
+            return (
+                <div className="pb-20 animate-in p-4">
+                    <div className="flex items-center gap-2 mb-6">
+                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"><ArrowLeft/></button>
+                        <h2 className="text-xl font-bold">Resoconto Mensile</h2>
+                    </div>
+                    <div className="space-y-4">
+                        {data.length === 0 && <p className="text-center text-slate-400 mt-10">Nessuna spesa registrata.</p>}
+                        {data.map(([date, info]) => (
+                            <div key={date} className="bg-white dark:bg-slate-800 p-5 rounded-2xl border dark:border-slate-700 shadow-sm">
+                                <div className="flex justify-between items-center mb-2">
+                                    <h3 className="font-bold text-lg capitalize">{new Date(date.split('/').reverse().join('-')).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}</h3>
+                                    <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-3 py-1 rounded-lg font-bold">€{info.total.toFixed(2)}</span>
+                                </div>
+                                <div className="text-sm text-slate-500 dark:text-slate-400">{info.items.length} acquisti</div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        const LiquidArchive = ({ orders, currentUser, onBack }) => {
+            const liquids = useMemo(() => {
+                return orders.flatMap(o => (o.items || []))
+                    .filter(i => i.person === currentUser && (i.liquidMl || (i.link && i.link.toLowerCase().includes('liquido'))))
+                    .map(i => ({...i, date: i.date || 'N/D'}));
+            }, [orders, currentUser]);
+
+            return (
+                <div className="pb-20 animate-in p-4">
+                     <div className="flex items-center gap-2 mb-6">
+                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"><ArrowLeft/></button>
+                        <h2 className="text-xl font-bold">Archivio Liquidi</h2>
+                    </div>
+                    <div className="space-y-3">
+                         {liquids.length === 0 && <p className="text-center text-slate-400 mt-10">Nessun liquido in archivio.</p>}
+                         {liquids.map((item, idx) => (
+                             <div key={idx} className="bg-white dark:bg-slate-800 p-4 rounded-xl border dark:border-slate-700 flex justify-between items-center">
+                                <div className="overflow-hidden">
+                                    <p className="font-bold truncate text-slate-800 dark:text-white">{item.link || item.otherItems || 'Liquido Generico'}</p>
+                                    <p className="text-xs text-slate-500 mt-1">{item.liquidMl}ml • {item.nicotineMl}nic • {item.vapeType}</p>
+                                </div>
+                                <div className="bg-slate-100 dark:bg-slate-700 p-2 rounded-lg text-slate-500">
+                                    <Droplets size={18} />
+                                </div>
+                             </div>
+                         ))}
+                    </div>
+                </div>
+            )
+        }
+
+        // --- COMPONENTE ARCHIVIO STORICO GENERALE ---
+        const OrderArchive = ({ orders, currentUser, isManager, onBack, onDelete, onReset, onClickOrder }) => {
+            return (
+                <div className="pb-20 animate-in p-4">
+                    <div className="flex items-center gap-2 mb-6">
+                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"><ArrowLeft/></button>
+                        <h2 className="text-xl font-bold">Storico Ordini</h2>
+                    </div>
+                    
+                    {orders.length === 0 && <p className="text-center text-slate-400 mt-10">Nessun ordine nello storico.</p>}
+
+                    <div className="space-y-6">
+                        {orders.map(([monthYear, monthOrders]) => (
+                            <div key={monthYear}>
+                                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3 pl-1 sticky top-0 bg-white/95 dark:bg-slate-900/95 py-2 z-10">
+                                    {new Date(monthYear.split('/').reverse().join('-')).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}
+                                </h3>
+                                <div className="space-y-3">
+                                    {monthOrders.map(order => (
+                                        <OrderCard 
+                                            key={order.id} 
+                                            order={order} 
+                                            currentUser={currentUser}
+                                            onClick={onClickOrder}
+                                            onDelete={isManager || order.creator === currentUser ? onDelete : undefined}
+                                            onReset={isManager ? onReset : undefined}
+                                            isManager={isManager}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        // --- COMPONENTE CARD ORDINE ---
+        const OrderCard = ({ order, currentUser, onClick, onDelete, onReset, isManager }) => {
+            const myCount = (order.items || []).filter(i => i.person === currentUser).length;
+            const isCreator = order.creator === currentUser;
+
+            return (
+                <div 
+                    onClick={() => onClick(order.id)}
+                    className="bg-white dark:bg-slate-900 border dark:border-slate-700 p-4 rounded-2xl shadow-sm mb-3 flex justify-between items-center cursor-pointer active:scale-[0.99] transition-transform hover:shadow-md group"
+                >
+                     <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-2xl flex items-center justify-center flex-shrink-0 group-hover:bg-indigo-100 dark:group-hover:bg-indigo-900/40 transition-colors">
+                            <ShoppingBag size={22} />
+                        </div>
+                        <div className="min-w-0">
+                            <h3 className="font-bold text-slate-900 dark:text-white leading-tight truncate group-hover:text-blue-600 transition-colors">{order.title}</h3>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">I tuoi articoli: <span className="font-bold">{myCount}</span></p>
+                        </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                        {isManager && onReset && (
+                            <button 
+                                onClick={(e) => { e.stopPropagation(); onReset(order.id); }}
+                                className="w-10 h-10 flex items-center justify-center bg-orange-50 dark:bg-orange-900/20 text-orange-500 rounded-xl hover:bg-orange-100 dark:hover:bg-orange-900/40 transition-colors border border-orange-100 dark:border-orange-900/30"
+                                title="Reset / Rifai Ordine"
+                            >
+                                <RefreshCcw size={18} />
+                            </button>
+                        )}
+
+                        {(isManager || isCreator) && onDelete && (
+                            <button 
+                                onClick={(e) => { e.stopPropagation(); onDelete(order.id); }}
+                                className="w-10 h-10 flex items-center justify-center bg-red-50 dark:bg-red-900/20 text-red-500 rounded-xl hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors border border-red-100 dark:border-red-900/30"
+                                title="Elimina Ordine"
+                            >
+                                <Trash2 size={18} />
+                            </button>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        // --- COMPONENTE DETTAGLIO ORDINE ---
+        const OrderDetail = ({ order, users, currentUser, isManager, onBack, onAdd, onRemove, onDelete, onUpdateStatus, currentPricing, allOrders }) => {
+            const [person, setPerson] = useState(currentUser || (users && users.length > 0 ? users[0] : ''));
+            const [link, setLink] = useState('');
+            const [liquidMl, setLiquidMl] = useState('');
+            const [nicotineMl, setNicotineMl] = useState('');
+            const [vapeType, setVapeType] = useState('Guanciale');
+            const [otherItems, setOtherItems] = useState('');
+            const [extraCost, setExtraCost] = useState(''); 
+            const [customAromaPrice, setCustomAromaPrice] = useState(currentPricing.defaultAromaPrice);
+
+            // Memoize estimated price using currentPricing prop
+            const estimatedPrice = useMemo(() => {
+                const ml = parseFloat(liquidMl) || 0;
+                const nic = parseFloat(nicotineMl) || 0;
+                const extra = parseFloat(extraCost) || 0;
+                const aromaP = parseFloat(customAromaPrice) || currentPricing.defaultAromaPrice;
+
+                if (ml === 0) return 0; 
+
+                const nicBottles = (ml * nic) / currentPricing.nicotineBottleMg;
+                const costNic = nicBottles * currentPricing.nicotineBottlePrice;
+                const costAroma = aromaP;
+                const volNic = nicBottles * currentPricing.nicotineBottleVol;
+                const volBase = ml - currentPricing.aromaVol - volNic;
+                const costBase = volBase > 0 ? volBase * currentPricing.basePricePerMl : 0;
+
+                return costNic + costAroma + costBase + extra;
+            }, [liquidMl, nicotineMl, extraCost, customAromaPrice, currentPricing]);
+
+            if (!order) return (
+                 <div className="pb-20 animate-in p-4">
+                    <div className="flex justify-between items-center mb-4">
+                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400"><ArrowLeft /></button>
+                        
+                        {(isManager || (order && order.creator === currentUser)) && (
+                            <button 
+                                onClick={() => onDelete(order.id)} 
+                                className="p-2 bg-red-50 text-red-500 rounded-full hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40"
+                                title="Elimina intero ordine"
+                            >
+                                <Trash2 size={20} />
+                            </button>
+                        )}
+                    </div>
+                    <div className="p-10 text-center text-slate-400">
+                        <p>Ordine non trovato o in caricamento...</p>
+                    </div>
+                </div>
+            );
+            
+            const visibleItems = isManager ? (order.items || []) : (order.items || []).filter(i => i.person === currentUser);
+            const isCreator = order.creator === currentUser;
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (!link.trim() && !otherItems.trim()) return alert("Inserisci un link o altro acquisto.");
+                
+                onAdd(order.id, { 
+                    person, 
+                    link, 
+                    aroma: '', 
+                    liquidMl, 
+                    nicotineMl, 
+                    vapeType, 
+                    otherItems, 
+                    price: Math.ceil(estimatedPrice), 
+                    userConfirmedPayment: false 
+                });
+                
+                setLink(''); setLiquidMl(''); setNicotineMl(''); setOtherItems(''); setExtraCost(''); setCustomAromaPrice(currentPricing.defaultAromaPrice);
+            };
+
+            const handleSendOrder = () => {
+                alert("Ordine inviato correttamente!"); 
+                onBack();
+            };
+
+            const itemsByPerson = isManager 
+                ? (order.items || []).reduce((acc, item) => { if(!acc[item.person]) acc[item.person] = []; acc[item.person].push(item); return acc; }, {}) 
+                : { [currentUser]: visibleItems };
+
+            return (
+                <div className="pb-20 animate-in">
+                    <div className="flex justify-between items-center mb-4">
+                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400"><ArrowLeft /></button>
+                        
+                        {(isManager || isCreator) && (
+                            <button 
+                                onClick={() => onDelete(order.id)} 
+                                className="p-2 bg-red-50 text-red-500 rounded-full hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40"
+                                title="Elimina intero ordine"
+                            >
+                                <Trash2 size={20} />
+                            </button>
+                        )}
+                    </div>
+                    <div className="bg-slate-800 dark:bg-black text-white p-5 rounded-2xl shadow-lg mb-6"><h2 className="text-xl font-bold">{order.title}</h2><p className="text-slate-400 text-sm mt-1">{order.date}</p></div>
+                    
+                    <div className="bg-slate-50 dark:bg-slate-800 border dark:border-slate-700 p-4 rounded-2xl mb-8">
+                         <div className="flex justify-between items-center mb-3">
+                             <h3 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase flex items-center gap-2"><Plus size={16}/> Aggiungi Articolo</h3>
+                             <div className="flex gap-2">
+                                 {estimatedPrice > 0 && (
+                                     <span className="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 px-3 py-1 rounded-lg text-xs font-bold animate-in fade-in">
+                                          ~€{estimatedPrice.toFixed(2)}
+                                     </span>
+                                 )}
+                             </div>
+                         </div>
+                        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+                            <div className="space-y-1"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Chi</label>
+                                <select className="w-full px-3 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl" value={person} onChange={e => setPerson(e.target.value)} disabled={!isManager}>{users.map(u => <option key={u} value={u}>{u}</option>)}</select>
+                            </div>
+                            <div className="space-y-2"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Link</label>
+                                <input type="url" placeholder="Incolla Link..." className="w-full px-4 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl text-sm" value={link} onChange={e => setLink(e.target.value)} />
+                            </div>
+                            <div className="flex gap-2">
+                                <div className="space-y-2 flex-1"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Specifiche</label>
+                                    <div className="flex gap-2"><div className="relative flex-1"><input type="number" inputMode="numeric" placeholder="ml Liq" className="w-full px-3 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl" value={liquidMl} onChange={e => setLiquidMl(e.target.value)} /></div><div className="relative flex-1"><input type="number" inputMode="decimal" placeholder="Nicotina" className="w-full px-3 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl" value={nicotineMl} onChange={e => setNicotineMl(e.target.value)} /></div></div>
+                                </div>
+                                <div className="space-y-2 w-1/3"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Costo Aroma (€)</label>
+                                    <input type="number" step="0.01" inputMode="decimal" placeholder={currentPricing.defaultAromaPrice.toFixed(2)} className="w-full px-3 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl" value={customAromaPrice} onChange={e => setCustomAromaPrice(e.target.value)} />
+                                </div>
+                            </div>
+                            <div className="flex bg-white dark:bg-slate-700 rounded-xl border dark:border-slate-600 p-1">{['Guanciale', 'Polmonare'].map(t => <button key={t} type="button" onClick={() => setVapeType(t)} className={`flex-1 rounded-lg text-xs font-medium py-2 ${vapeType === t ? 'bg-slate-800 text-white' : 'text-slate-500 dark:text-slate-400'}`}>{t}</button>)}</div>
+                            <div className="space-y-2"><label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Altro & Extra</label>
+                                <div className="flex gap-2">
+                                    <textarea rows="1" placeholder="Es. Cotone..." className="flex-1 px-4 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl text-sm" value={otherItems} onChange={e => setOtherItems(e.target.value)} />
+                                    <input type="number" inputMode="decimal" placeholder="Costo Aggiunte (€)" className="w-1/3 px-3 py-2.5 bg-white dark:bg-slate-700 dark:text-white border dark:border-slate-600 rounded-xl text-sm" value={extraCost} onChange={e => setExtraCost(e.target.value)} />
+                                </div>
+                            </div>
+                            <button type="submit" className="bg-blue-600 text-white px-6 py-3 rounded-xl shadow-lg font-bold gap-2 mt-2 flex justify-center items-center"><Plus size={20} /> AGGIUNGI</button>
+                        </form>
+                    </div>
+
+                    <div className="space-y-6">
+                        {/* INTESTAZIONE LISTA PER GUEST */}
+                        {!isManager && (visibleItems.length > 0) && (
+                            <h3 className="text-lg font-bold text-slate-800 dark:text-white px-1">I tuoi articoli inseriti:</h3>
+                        )}
+
+                        {Object.entries(itemsByPerson).map(([pName, pItems]) => (
+                            <div key={pName} className="border-b dark:border-slate-800 pb-4 last:border-0">
+                                {isManager && (
+                                    <div className="flex justify-between items-center mb-3 px-1 sticky top-0 bg-white/95 dark:bg-slate-900/95 py-2 z-10">
+                                        <h3 className="font-bold text-lg text-slate-800 dark:text-slate-200">{pName}</h3>
+                                        <span className="text-xs bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">{pItems.length} articoli</span>
+                                    </div>
+                                )}
+                                <div className="space-y-2">
+                                    {pItems.slice().reverse().map((item) => (
+                                        <div key={item.id} className="p-3 md:p-4 rounded-xl border dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm transition hover:shadow-md">
+                                            {/* GESTORE VIEW - COLONNE */}
+                                            {isManager ? (
+                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+                                                    {/* Colonna 1: Link/Nome */}
+                                                    <div className="min-w-0">
+                                                        {item.link ? 
+                                                            <a href={item.link} target="_blank" className="font-bold text-blue-600 dark:text-blue-400 truncate block hover:underline">{item.link}</a> : 
+                                                            <p className="font-bold text-slate-800 dark:text-white truncate">Oggetto manuale</p>
+                                                        }
+                                                        {item.otherItems && <p className="text-xs text-orange-500 font-medium flex items-center gap-1 mt-1"><Sparkles size={10} /> {item.otherItems}</p>}
+                                                    </div>
+
+                                                    {/* Colonna 2: Specifiche */}
+                                                    <div className="flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400 md:justify-center">
+                                                        {item.liquidMl && <span className="bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded">{item.liquidMl}ml</span>}
+                                                        {item.nicotineMl && <span className="bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded">{item.nicotineMl}nic</span>}
+                                                        {item.vapeType && <span className="bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded">{item.vapeType}</span>}
+                                                    </div>
+
+                                                    {/* Colonna 3: Azioni & Stato */}
+                                                    <div className="flex items-center justify-between md:justify-end gap-3">
+                                                         {/* Guest Confirmation Indicator */}
+                                                         {item.userConfirmedPayment && !item.paid && (
+                                                            <span title="Utente ha confermato il pagamento" className="text-orange-500 bg-orange-50 dark:bg-orange-900/20 p-1.5 rounded-lg animate-pulse">
+                                                                <BellRing size={18} />
+                                                            </span>
+                                                        )}
+                                                        <button 
+                                                            onClick={(e) => { e.stopPropagation(); onRemove(order.id, item.id); }} 
+                                                            className="text-slate-300 hover:text-red-500 p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700"
+                                                        >
+                                                            <X size={18} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                            /* GUEST VIEW - COMPACT */
+                                                <div className="flex justify-between items-center">
+                                                    <div className="min-w-0 flex-1 pr-3">
+                                                        {item.link ? <a href={item.link} target="_blank" className="font-bold text-blue-600 dark:text-blue-400 truncate block flex items-center gap-1"><LinkIcon size={12} /> Link Prodotto</a> : <p className="font-bold text-slate-800 dark:text-white">Oggetto manuale</p>}
+                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{item.liquidMl}ml • {item.nicotineMl}nic • {item.vapeType}</p>
+                                                        {item.otherItems && <p className="text-xs text-orange-500 font-medium mt-1"><Sparkles size={10} inline /> {item.otherItems}</p>}
+                                                    </div>
+                                                    
+                                                    <div className="flex flex-col items-end gap-2">
+                                                        {!item.paid ? (
+                                                            item.userConfirmedPayment ? (
+                                                                <span className="text-[10px] font-bold text-orange-500 bg-orange-50 dark:bg-orange-900/20 px-2 py-1 rounded-lg">In attesa conferma</span>
+                                                            ) : (
+                                                                <button 
+                                                                    onClick={() => onUpdateStatus(order.id, item.id, 'userConfirmedPayment', true)}
+                                                                    className="flex items-center gap-1 bg-emerald-500 text-white text-[10px] font-bold px-2 py-1.5 rounded-lg shadow hover:bg-emerald-600"
+                                                                >
+                                                                    <CheckCircle2 size={12}/> Ho Pagato
+                                                                </button>
+                                                            )
+                                                        ) : (
+                                                            <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-1 rounded-lg">Pagato</span>
+                                                        )}
+
+                                                        <button 
+                                                            onClick={(e) => { e.stopPropagation(); onRemove(order.id, item.id); }} 
+                                                            className="text-slate-300 hover:text-red-500 p-1"
+                                                        >
+                                                            <X size={16} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                    </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {!isManager && (
+                        <div className="mt-8 pt-6 border-t dark:border-slate-800">
+                            <button 
+                                onClick={handleSendOrder}
+                                className="w-full bg-emerald-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-emerald-200 dark:shadow-emerald-900/20 flex items-center justify-center gap-2 hover:bg-emerald-600 active:scale-95 transition-transform"
+                            >
+                                <Send size={20} />
+                                CONFERMA E INVIA ORDINE
+                            </button>
+                            <p className="text-center text-xs text-slate-400 mt-2">L'ordine verrà salvato e potrai vederlo nella lista principale.</p>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const OrderManager = () => {
+            // --- STATE ---
+            const [users, setUsers] = useState(['Gestore']);
+            const [orders, setOrders] = useState([]);
+            const [paymentRequests, setPaymentRequests] = useState({});
+            const [pricing, setPricing] = useState(DEFAULT_PRICING); 
+
+            const [currentUser, setCurrentUser] = useState(null);
+            const [firebaseUser, setFirebaseUser] = useState(null);
+            const [connectionError, setConnectionError] = useState(null); 
+            const [showWelcome, setShowWelcome] = useState(false);
+            
+            // Login State
+            const [isLoggingInAsManager, setIsLoggingInAsManager] = useState(false);
+            const [managerPassword, setManagerPassword] = useState('');
+            const [loginError, setLoginError] = useState('');
+            
+            const [view, setView] = useState('dashboard');
+            const [activeOrderId, setActiveOrderId] = useState(null);
+            const [newUserName, setNewUserName] = useState('');
+            const [isAddingUser, setIsAddingUser] = useState(false);
+            const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+            const [isPricingModalOpen, setIsPricingModalOpen] = useState(false);
+            
+            // --- NEW STATES FOR FAVORITES ---
+            const [favModalOpen, setFavModalOpen] = useState(false);
+            const [itemToFav, setItemToFav] = useState(null);
+
+            // Modal State
+            const [modalConfig, setModalConfig] = useState({ isOpen: false, title: '', message: '', onConfirm: null, isDanger: false, confirmText: 'Conferma' });
+
+            // Theme Hook
+            const [theme, setTheme] = useTheme();
+
+            // Ref for click outside profile menu
+            const profileMenuRef = useRef(null);
+            
+            useEffect(() => {
+                const handleClickOutside = (event) => {
+                    if (profileMenuRef.current && !profileMenuRef.current.contains(event.target)) {
+                        setIsProfileMenuOpen(false);
+                    }
+                };
+                document.addEventListener("mousedown", handleClickOutside);
+                return () => document.removeEventListener("mousedown", handleClickOutside);
+            }, []);
+
+            // --- HELPER PER MODALE ---
+            const showConfirm = (title, message, onConfirm, isDanger = false, confirmText = "Conferma") => {
+                setModalConfig({ isOpen: true, title, message, onConfirm: () => { onConfirm(); setModalConfig(prev => ({...prev, isOpen: false})); }, onCancel: () => setModalConfig(prev => ({...prev, isOpen: false})), isDanger, confirmText });
+            };
+
+            const showInfo = (title, message) => {
+                setModalConfig({ isOpen: true, title, message, onConfirm: () => setModalConfig(prev => ({...prev, isOpen: false})), onCancel: () => setModalConfig(prev => ({...prev, isOpen: false})), isDanger: false, confirmText: 'OK' });
+            };
+
+            // --- FIREBASE SYNC ---
+            useEffect(() => {
+                if (!isConfigured) return;
+
+                const initAuth = async () => {
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    } catch (err) {
+                        console.warn("Custom token auth failed, trying anonymous:", err);
+                        try {
+                            await signInAnonymously(auth);
+                        } catch (anonErr) {
+                            console.error("Anonymous auth failed:", anonErr);
+                            setConnectionError(anonErr.message);
+                        }
+                    }
+                };
+                
+                const timer = setTimeout(() => {
+                    if (!auth.currentUser) {
+                        setConnectionError("Timeout: La connessione sta impiegando troppo tempo.");
+                    }
+                }, 10000);
+
+                initAuth();
+                const unsubscribe = onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        clearTimeout(timer);
+                        setFirebaseUser(user);
+                    }
+                });
+                return () => {
+                    unsubscribe();
+                    clearTimeout(timer);
+                };
+            }, []);
+
+            // --- AUTO LOGIN CHECK ---
+            useEffect(() => {
+                const savedUser = localStorage.getItem('svapo_last_user');
+                if (savedUser) {
+                    setCurrentUser(savedUser); 
+                    setShowWelcome(true);       
+                    setTimeout(() => {
+                        setView('dashboard');
+                        setShowWelcome(false); 
+                    }, 2000); 
+                }
+            }, []);
+
+            useEffect(() => {
+                if (!firebaseUser) return;
+                const qOrders = collection(db, 'artifacts', APP_ID, 'public', 'data', 'orders');
+                const unsubOrders = onSnapshot(qOrders, (snapshot) => {
+                    const loadedOrders = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                    loadedOrders.sort((a, b) => b.id - a.id);
+                    setOrders(loadedOrders);
+                }, (err) => {
+                    console.error("Orders Listener Error:", err);
+                    setConnectionError("Errore lettura ordini: " + err.message);
+                });
+
+                const docSettings = doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'global');
+                const unsubSettings = onSnapshot(docSettings, (snapshot) => {
+                    if (snapshot.exists()) {
+                        const data = snapshot.data();
+                        if (data.users) setUsers(data.users);
+                        if (data.paymentRequests) setPaymentRequests(data.paymentRequests);
+                        // Fetch Pricing from DB, else default
+                        if (data.pricing) setPricing(data.pricing);
+                    } else {
+                        setDoc(docSettings, { users: ['Gestore'], paymentRequests: {}, pricing: DEFAULT_PRICING });
+                    }
+                }, (err) => {
+                    console.error("Settings Listener Error:", err);
+                });
+                return () => { unsubOrders(); unsubSettings(); };
+            }, [firebaseUser]);
+
+            // --- CALCULATIONS & FILTERING ---
+            const isManager = currentUser === 'Gestore';
+
+            const getDaysAgo = (dateStr) => {
+                const [day, month, year] = dateStr.split('/').map(Number);
+                const orderDate = new Date(year, month - 1, day);
+                const today = new Date();
+                const diffTime = Math.abs(today - orderDate);
+                return Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+            };
+
+            const { activeOrders, archivedOrdersList } = useMemo(() => {
+                const threshold = isManager ? 7 : 3;
+                const filterVisible = (o) => {
+                    if (isManager) return true;
+                    return (o.creator === 'Gestore' || !o.creator || o.creator === currentUser);
+                };
+
+                const visibleOrders = orders.filter(filterVisible);
+
+                return {
+                    activeOrders: visibleOrders.filter(o => getDaysAgo(o.date) <= threshold),
+                    archivedOrdersList: visibleOrders.filter(o => getDaysAgo(o.date) > threshold)
+                };
+            }, [orders, isManager, currentUser]);
+
+            const groupOrdersByMonth = (ordersToGroup) => {
+                const grouped = {};
+                ordersToGroup.forEach(order => {
+                    const [day, month, year] = order.date.split('/');
+                    const key = `${month}/${year}`;
+                    if (!grouped[key]) grouped[key] = [];
+                    grouped[key].push(order);
+                });
+                return Object.entries(grouped).sort((a, b) => {
+                    const [ma, ya] = a[0].split('/');
+                    const [mb, yb] = b[0].split('/');
+                    if (ya !== yb) return yb - ya;
+                    return mb - ma;
+                });
+            };
+
+            const groupedActiveOrders = useMemo(() => groupOrdersByMonth(activeOrders), [activeOrders]);
+            const groupedArchivedOrders = useMemo(() => groupOrdersByMonth(archivedOrdersList), [archivedOrdersList]);
+
+            const userStats = useMemo(() => {
+                if (!currentUser || isManager) return null;
+                const myItems = orders.flatMap(o => (o.items || []).map(i => ({...i, date: o.date, orderTitle: o.title, orderId: o.id})))
+                                        .filter(i => i.person === currentUser);
+                const totalItems = myItems.length;
+                const pendingItems = myItems.filter(i => !i.paid).length;
+                
+                let totalDebt = 0;
+                let pendingConfirmationDebt = 0;
+
+                myItems.forEach(item => {
+                    if (!item.paid) {
+                        const price = parseFloat(item.price) || 0;
+                        if (item.userConfirmedPayment) {
+                            pendingConfirmationDebt += price;
+                        } else {
+                            totalDebt += price;
+                        }
+                    }
+                });
+                
+                const itemsToPay = myItems.filter(i => !i.paid && !i.userConfirmedPayment).length;
+
+                return { totalItems, pendingItems, myItems, totalDebt, pendingConfirmationDebt, itemsToPay };
+            }, [orders, currentUser, isManager]);
+
+            const managerStats = useMemo(() => {
+                if (!isManager) return null;
+                let totalCredits = 0;
+                let totalCollected = 0;
+                const pendingByUser = {};
+                const lastOrderItemsByUser = {};
+
+                orders.forEach(order => {
+                    (order.items || []).forEach(item => {
+                        const price = parseFloat(item.price) || 0;
+                        if (item.paid) totalCollected += price;
+                        else totalCredits += price;
+
+                        if (item.userConfirmedPayment && !item.paid) {
+                            if (!pendingByUser[item.person]) pendingByUser[item.person] = { total: 0, items: [] };
+                            pendingByUser[item.person].total += price;
+                            pendingByUser[item.person].items.push({ ...item, orderId: order.id });
+                        }
+
+                        if (item.bought) {
+                            if (!lastOrderItemsByUser[item.person]) lastOrderItemsByUser[item.person] = [];
+                            lastOrderItemsByUser[item.person].push({ ...item, orderTitle: order.title });
+                        }
+                    });
+                });
+                return { totalCredits, totalCollected, pendingByUser, lastOrderItemsByUser };
+            }, [orders, isManager]);
+
+            const shoppingList = useMemo(() => {
+                const allItems = orders.flatMap(order => 
+                    (order.items || []).map(item => ({ ...item, orderId: order.id, orderTitle: order.title }))
+                );
+                const grouped = {};
+                allItems.forEach(item => {
+                    const key = item.link ? item.link.trim() : `nolink-${item.id}`;
+                    if (!grouped[key]) grouped[key] = { link: item.link, count: 0, items: [], allBought: true };
+                    grouped[key].count += 1;
+                    grouped[key].items.push(item);
+                    if (!item.bought) grouped[key].allBought = false;
+                });
+                return Object.values(grouped).sort((a, b) => {
+                    if (a.allBought === b.allBought) return 0;
+                    return a.allBought ? 1 : -1; 
+                });
+            }, [orders]);
+
+            const initiateLogin = (user) => {
+                if (user === 'Gestore') {
+                    setIsLoggingInAsManager(true); setManagerPassword(''); setLoginError('');
+                } else {
+                    localStorage.setItem('svapo_last_user', user);
+                    setCurrentUser(user);
+                    setShowWelcome(true); 
+                    setTimeout(() => {
+                        setView('dashboard');
+                        setShowWelcome(false); 
+                    }, 2000); 
+                }
+            };
+
+            const submitManagerLogin = (e) => {
+                e.preventDefault();
+                if (managerPassword === '1234') {
+                    localStorage.setItem('svapo_last_user', 'Gestore');
+                    setCurrentUser('Gestore'); 
+                    setIsLoggingInAsManager(false);
+                    setShowWelcome(true);
+
+                    setTimeout(() => {
+                        setView('dashboard');
+                        setShowWelcome(false);
+                    }, 2000);
+                } else {
+                    setLoginError('Password errata'); setManagerPassword('');
+                }
+            };
+
+            const handleLogout = () => {
+                localStorage.removeItem('svapo_last_user');
+                setCurrentUser(null);
+            };
+
+            const addUser = async (e) => {
+                e.preventDefault();
+                const name = newUserName.trim();
+                if(name && !users.includes(name)) {
+                    await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'global'), { users: arrayUnion(name) });
+                    setNewUserName(''); setIsAddingUser(false);
+                }
+            };
+
+            const deleteUser = (userToDelete) => {
+                if (userToDelete === 'Gestore') return showInfo("Impossibile", "Non puoi eliminare il Gestore.");
+                
+                showConfirm(
+                    "Elimina Utente", 
+                    `Sei sicuro di voler eliminare definitivamente l'utente "${userToDelete}"?`, 
+                    async () => {
+                        const newUsersList = users.filter(u => u !== userToDelete);
+                        try {
+                            await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'global'), { 
+                                users: newUsersList 
+                            });
+                        } catch (error) {
+                            showInfo("Errore", error.message);
+                        }
+                    },
+                    true, // isDanger
+                    "Elimina"
+                );
+            };
+
+            // --- FUNZIONE SALVATAGGIO PREZZI ---
+            const savePricing = async (newPricing) => {
+                try {
+                     await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'global'), { 
+                        pricing: newPricing
+                    });
+                    setPricing(newPricing);
+                    setIsPricingModalOpen(false);
+                    showInfo("Salvato", "Prezzi aggiornati per tutti gli utenti.");
+                } catch (e) {
+                    showInfo("Errore", "Impossibile salvare i prezzi: " + e.message);
+                }
+            };
+
+            const createOrder = async () => {
+                const dateStr = new Date().toLocaleDateString('it-IT');
+                const newId = Date.now().toString();
+                setActiveOrderId(newId);
+                await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'orders', newId), {
+                    id: newId, 
+                    title: `Ordine del ${dateStr}`, 
+                    date: dateStr, 
+                    items: [], 
+                    status: 'active',
+                    creator: currentUser 
+                });
+            };
+
+            const updateOrderItems = async (orderId, newItems) => {
+                await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'orders', orderId.toString()), { items: newItems });
+            };
+
+            const addItemToOrder = async (orderId, item) => {
+                const order = orders.find(o => o.id == orderId);
+                if (!order) return;
+                await updateOrderItems(orderId, [...(order.items || []), { ...item, id: Date.now(), paid: false, bought: false, userConfirmedPayment: false }]);
+            };
+
+            const removeItemFromOrder = async (orderId, itemId) => {
+                const order = orders.find(o => o.id == orderId);
+                if (!order) return;
+                await updateOrderItems(orderId, order.items.filter(i => i.id !== itemId));
+            };
+
+            const updateItemPrice = async (orderId, itemId, newPrice) => {
+                const order = orders.find(o => o.id == orderId);
+                if (!order) return;
+                await updateOrderItems(orderId, order.items.map(item => item.id === itemId ? { ...item, price: parseFloat(newPrice) || 0 } : item));
+            };
+
+            const updateItemStatus = async (orderId, itemId, field, value) => {
+                const order = orders.find(o => o.id == orderId);
+                if (!order) return;
+                await updateOrderItems(orderId, order.items.map(item => item.id === itemId ? { ...item, [field]: value } : item));
+            }
+
+            const toggleBoughtStatus = async (orderId, itemId) => {
+                const order = orders.find(o => o.id == orderId);
+                if (!order) return;
+                await updateOrderItems(orderId, order.items.map(item => item.id === itemId ? { ...item, bought: !item.bought } : item));
+            };
+
+            const deleteOrder = (orderId) => {
+                showConfirm(
+                    "Elimina Ordine", 
+                    "Vuoi eliminare definitivamente questo ordine? L'azione è irreversibile.", 
+                    async () => {
+                        await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'orders', orderId.toString()));
+                        setActiveOrderId(null);
+                    },
+                    true,
+                    "Elimina"
+                );
+            };
+
+            const resetOrder = (orderId) => {
+                showConfirm(
+                    "Reset Ordine",
+                    "Vuoi svuotare tutti gli articoli di questo ordine per ricominciare da zero?",
+                    async () => {
+                        await updateOrderItems(orderId, []);
+                    },
+                    false,
+                    "Svuota Ordine"
+                );
+            };
+
+            const factoryReset = () => {
+                if (!isManager) return;
+                
+                showConfirm(
+                    "RESET TOTALE APPLICAZIONE",
+                    "ATTENZIONE: Stai per cancellare TUTTI i dati, tutti gli ordini e tutti gli utenti. Questa azione è distruttiva e irreversibile.",
+                    async () => {
+                        try {
+                            const ordersSnapshot = await getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'orders'));
+                            const batch = writeBatch(db);
+                            ordersSnapshot.forEach((doc) => {
+                                batch.delete(doc.ref);
+                            });
+                            await batch.commit();
+
+                            await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'global'), { users: ['Gestore'], paymentRequests: {}, pricing: DEFAULT_PRICING });
+                            
+                            showInfo("Reset Completato", "L'applicazione è tornata allo stato iniziale.");
+                            setTimeout(() => window.location.reload(), 2000);
+                        } catch (e) {
+                            showInfo("Errore", "Errore durante il reset: " + e.message);
+                        }
+                    },
+                    true,
+                    "DISTRUGGI TUTTO"
+                );
+            };
+
+            const confirmAllPayments = async () => {
+                const updates = [];
+                orders.forEach(order => {
+                    const userItemsToUpdate = (order.items || []).filter(i => i.person === currentUser && !i.paid && !i.userConfirmedPayment);
+                    
+                    if (userItemsToUpdate.length > 0) {
+                        const newItems = order.items.map(i => {
+                            if (i.person === currentUser && !i.paid && !i.userConfirmedPayment) {
+                                return { ...i, userConfirmedPayment: true };
+                            }
+                            return i;
+                        });
+                        updates.push(updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'orders', order.id), { items: newItems }));
+                    }
+                });
+                
+                try {
+                    await Promise.all(updates);
+                } catch (e) {
+                    console.error("Error confirming payments:", e);
+                    showInfo("Errore", "Impossibile confermare i pagamenti. Riprova.");
+                }
+            };
+
+            const confirmUserPayments = async (user, pendingItems) => {
+                const updates = {}; 
+
+                pendingItems.forEach(item => {
+                    if (!updates[item.orderId]) {
+                        const order = orders.find(o => o.id === item.orderId);
+                        if (order) updates[item.orderId] = [...order.items];
+                    }
+                });
+
+                pendingItems.forEach(item => {
+                    if (updates[item.orderId]) {
+                        updates[item.orderId] = updates[item.orderId].map(i => 
+                            i.id === item.id ? { ...i, paid: true } : i
+                        );
+                    }
+                });
+
+                try {
+                    await Promise.all(Object.entries(updates).map(([orderId, newItems]) => 
+                        updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'orders', orderId), { items: newItems })
+                    ));
+                    showInfo("Confermato", `Pagamenti di ${user} confermati.`);
+                } catch (e) {
+                    console.error(e);
+                    showInfo("Errore", "Errore durante la conferma.");
+                }
+            };
+
+            // --- GUEST DASHBOARD ACTIONS ---
+            const handleAddToFavorites = async (name) => {
+                setFavModalOpen(false);
+                if (!name || !itemToFav) return;
+                
+                const item = itemToFav;
+                const favItem = {
+                    id: Date.now(),
+                    name: name,
+                    link: item.link || '',
+                    // Use || '' or || null to prevent undefined
+                    liquidMl: item.liquidMl || '',
+                    nicotineMl: item.nicotineMl || '',
+                    vapeType: item.vapeType || '',
+                    otherItems: item.otherItems || ''
+                };
+
+                try {
+                    const ref = doc(db, 'artifacts', APP_ID, 'public', 'data', 'favorites', currentUser);
+                    // Check if doc exists, if not setDoc creates it. arrayUnion works.
+                    await setDoc(ref, { items: arrayUnion(favItem) }, { merge: true });
+                    showInfo("Salvato", "Aggiunto agli Aromi Preferiti!");
+                    setItemToFav(null);
+                } catch (error) {
+                    console.error("Error saving favorite:", error);
+                    showInfo("Errore", "Impossibile salvare il preferito: " + error.message);
+                }
+            };
+
+            const openFavModal = (item) => {
+                setItemToFav(item);
+                setFavModalOpen(true);
+            }
+
+            const handleReorderSingle = async (item) => {
+                if (activeOrders.length === 0) {
+                    return showInfo("Nessun Ordine Attivo", "Non ci sono ordini aperti in questo momento per aggiungere l'articolo.");
+                }
+                
+                // Add to the most recent active order
+                const targetOrder = activeOrders[0]; 
+                
+                // Create new item based on old one (reset status flags)
+                const newItem = {
+                    ...item,
+                    id: Date.now(),
+                    person: currentUser,
+                    paid: false,
+                    bought: false,
+                    userConfirmedPayment: false
+                };
+                // Remove meta from previous order if present
+                delete newItem.orderId;
+                delete newItem.orderTitle;
+                delete newItem.date;
+
+                await addItemToOrder(targetOrder.id, newItem);
+                showInfo("Fatto", `Articolo aggiunto all'ordine: ${targetOrder.title}`);
+            };
+
+            const handleDeleteHistoryItem = (item) => {
+                showConfirm(
+                    "Elimina dallo Storico",
+                    "Sei sicuro? Se elimini questo articolo, verrà rimosso anche dal totale dei debiti/pagamenti nel sistema del gestore.",
+                    async () => {
+                        await removeItemFromOrder(item.orderId, item.id);
+                    },
+                    true, // Danger
+                    "Elimina"
+                );
+            };
+
+            // --- UI RENDER ---
+            if (!isConfigured) return <div className="p-10 text-center">Configurazione mancante</div>;
+            if (connectionError) return <div className="p-10 text-center text-red-500">Errore: {connectionError}</div>;
+            if (!firebaseUser) return <div className="min-h-screen flex items-center justify-center text-slate-400 bg-slate-50 dark:bg-slate-950 animate-pulse">Connessione Cloud...</div>;
+
+            if (showWelcome && currentUser) return (
+                <div className="min-h-screen bg-indigo-600 flex flex-col items-center justify-center text-white animate-in fade-in duration-500">
+                    <Cloud size={64} className="mb-4 animate-bounce-slow" />
+                    <h1 className="text-3xl font-bold mb-2">Bentornato, {currentUser}!</h1>
+                    <div className="flex items-center gap-2 text-indigo-200">
+                        <Loader2 className="animate-spin" size={20} />
+                        <span>Caricamento Dashboard...</span>
+                    </div>
+                </div>
+            );
+
+            if (!currentUser) return (
+                <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 relative">
+                    <ConfirmDialog {...modalConfig} />
+                    <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-3xl p-8 shadow-2xl animate-in">
+                        <div className="text-center mb-8">
+                            <div className="bg-blue-100 dark:bg-blue-900/30 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-blue-600 dark:text-blue-400"><Cloud size={32} /></div>
+                            <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Svapo Manager</h1>
+                            <p className="text-slate-500 dark:text-slate-400 text-sm">Cloud Edition</p>
+                        </div>
+                        {isLoggingInAsManager ? (
+                            <div className="animate-in">
+                                <button onClick={() => setIsLoggingInAsManager(false)} className="flex items-center gap-1 text-slate-400 mb-4 text-sm font-bold"><ArrowLeft size={16} /> Indietro</button>
+                                <form onSubmit={submitManagerLogin} className="space-y-4">
+                                    <input autoFocus type="password" placeholder="Password (1234)" className="w-full p-4 bg-slate-100 dark:bg-slate-700 dark:text-white rounded-xl text-center text-xl tracking-widest outline-none focus:ring-2 focus:ring-blue-500" value={managerPassword} onChange={e => setManagerPassword(e.target.value)} />
+                                    {loginError && <p className="text-red-500 text-sm text-center font-bold">{loginError}</p>}
+                                    <button type="submit" className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold">Accedi</button>
+                                </form>
+                            </div>
+                        ) : (
+                            <>
+                                <div className="grid grid-cols-2 gap-3 mb-6">
+                                    {users.map(u => (
+                                        <div key={u} className="relative group">
+                                            <button onClick={() => initiateLogin(u)} className="w-full relative p-4 rounded-xl border-2 border-slate-100 dark:border-slate-700 hover:border-blue-500 dark:hover:border-blue-500 transition-all font-medium text-slate-700 dark:text-slate-200 flex flex-col items-center gap-2">
+                                                <div className="w-10 h-10 bg-slate-200 dark:bg-slate-700 rounded-full flex items-center justify-center font-bold">{u.charAt(0)}</div>
+                                                {u}
+                                                {u === 'Gestore' && <Lock size={12} className="absolute top-2 right-2 text-slate-400" />}
+                                            </button>
+                                            
+                                            {u !== 'Gestore' && (
+                                                <button 
+                                                    onClick={(e) => { e.stopPropagation(); deleteUser(u); }}
+                                                    className="absolute -top-2 -right-2 w-8 h-8 flex items-center justify-center bg-red-500 text-white rounded-full shadow-lg border-2 border-white dark:border-slate-800 z-50 hover:bg-red-600 transition-transform active:scale-90"
+                                                    aria-label="Elimina utente"
+                                                >
+                                                    <X size={16} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))}
+                                    <button onClick={() => setIsAddingUser(true)} className="p-4 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-600 text-slate-400 flex flex-col items-center gap-2 justify-center"><Plus size={24} /> <span className="text-sm">Nuovo</span></button>
+                                </div>
+                                {isAddingUser && (
+                                    <form onSubmit={addUser} className="flex gap-2 animate-in"><input autoFocus type="text" placeholder="Nome..." className="flex-1 bg-slate-100 dark:bg-slate-700 dark:text-white rounded-xl px-4 py-3 outline-none" value={newUserName} onChange={e => setNewUserName(e.target.value)} /><button type="submit" className="bg-blue-600 text-white p-3 rounded-xl font-bold">Ok</button></form>
+                                )}
+                            </>
+                        )}
+                    </div>
+                </div>
+            );
+
+            return (
+                <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 font-sans pb-24 md:pb-0 relative">
+                    <ConfirmDialog {...modalConfig} />
+                    <PricingModal isOpen={isPricingModalOpen} onClose={() => setIsPricingModalOpen(false)} currentPricing={pricing} onSave={savePricing} />
+                    <AddToFavoriteModal isOpen={favModalOpen} onClose={() => setFavModalOpen(false)} onConfirm={handleAddToFavorites} item={itemToFav} />
+                    
+                    <div className="max-w-4xl mx-auto min-h-screen bg-white dark:bg-slate-900 shadow-xl flex flex-col border-x border-slate-100 dark:border-slate-800 relative">
+                        
+                        {/* HEADER */}
+                        <header className="p-4 md:p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between sticky top-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur z-20">
+                            
+                            {/* USER DROPDOWN */}
+                            <div className="relative" ref={profileMenuRef}>
+                                <button onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)} className="flex items-center gap-3 focus:outline-none group">
+                                    <div className="w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center text-white font-bold shadow-lg group-hover:bg-indigo-700 transition">{currentUser.charAt(0)}</div>
+                                    <div><p className="text-xs text-slate-400 uppercase font-bold">Benvenuto</p><h1 className="text-lg font-bold text-slate-900 dark:text-white leading-none flex items-center gap-1">{currentUser} <ChevronDown size={14} className={`transition-transform ${isProfileMenuOpen ? 'rotate-180' : ''}`} /></h1></div>
+                                </button>
+
+                                {isProfileMenuOpen && (
+                                    <div className="absolute top-14 left-0 w-64 bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border dark:border-slate-700 p-2 z-50 animate-in fade-in zoom-in-95 origin-top-left">
+                                        {/* THEME TOGGLE */}
+                                        <div className="p-2 border-b dark:border-slate-700 mb-2">
+                                            <p className="text-xs font-bold text-slate-400 uppercase mb-2 ml-1">Modalità</p>
+                                            <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-lg">
+                                                {['light', 'auto', 'dark'].map(t => (
+                                                    <button key={t} onClick={() => { setTheme(t); setIsProfileMenuOpen(false); }} className={`flex-1 p-2 rounded-md flex justify-center ${theme === t ? 'bg-white dark:bg-slate-600 shadow-sm text-blue-600 dark:text-blue-400' : 'text-slate-400'}`}>
+                                                        {t === 'light' && <Sun size={16} />}
+                                                        {t === 'auto' && <Monitor size={16} />}
+                                                        {t === 'dark' && <Moon size={16} />}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {/* MENU ITEMS */}
+                                        {!isManager && (
+                                            <>
+                                                <button onClick={() => { setView('monthly-report'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
+                                                    <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 rounded-lg"><Calendar size={18}/></div> Resoconto Spese
+                                                </button>
+                                                <button onClick={() => { setView('favorites'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
+                                                    <div className="p-2 bg-pink-100 dark:bg-pink-900/30 text-pink-600 rounded-lg"><Heart size={18}/></div> Aromi Preferiti
+                                                </button>
+                                                <button onClick={() => { setView('stats'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
+                                                    <div className="p-2 bg-purple-100 dark:bg-purple-900/30 text-purple-600 rounded-lg"><BarChart3 size={18}/></div> Statistiche
+                                                </button>
+                                                <button onClick={() => { setView('manager-archive'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
+                                                    <div className="p-2 bg-blue-50 dark:bg-blue-900/30 text-blue-500 rounded-lg"><Archive size={18}/></div> Storico Ordini
+                                                </button>
+                                                <div className="h-px bg-slate-100 dark:bg-slate-700 my-1"></div>
+                                            </>
+                                        )}
+
+                                        {isManager && (
+                                            <>
+                                                <button onClick={() => { setView('manager-archive'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
+                                                    <div className="p-2 bg-blue-50 dark:bg-blue-900/30 text-blue-500 rounded-lg"><Archive size={18}/></div> Storico Ordini
+                                                </button>
+                                                <button onClick={() => { setView('calculator'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
+                                                    <div className="p-2 bg-cyan-100 dark:bg-cyan-900/30 text-cyan-600 rounded-lg"><FlaskConical size={18}/></div> Calcolatore Mix
+                                                </button>
+                                                <button onClick={() => { setView('warehouse'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
+                                                    <div className="p-2 bg-orange-100 dark:bg-orange-900/30 text-orange-600 rounded-lg"><Box size={18}/></div> Magazzino
+                                                </button>
+                                                <button onClick={() => { setIsPricingModalOpen(true); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-emerald-50 dark:hover:bg-emerald-900/10 text-emerald-600 text-sm font-medium">
+                                                    <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 rounded-lg"><DollarSign size={18}/></div> Configura Prezzi
+                                                </button>
+                                                <div className="h-px bg-slate-100 dark:bg-slate-700 my-1"></div>
+                                                <button onClick={() => { factoryReset(); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/10 text-red-500 text-sm font-medium">
+                                                    <div className="p-2 bg-red-100 dark:bg-red-900/30 text-red-600 rounded-lg"><AlertTriangle size={18}/></div> Reset App
+                                                </button>
+                                                <div className="h-px bg-slate-100 dark:bg-slate-700 my-1"></div>
+                                            </>
+                                        )}
+                                        
+                                        <button onClick={() => { handleLogout(); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 text-sm font-medium">
+                                            <div className="p-2 bg-red-50 dark:bg-red-900/20 text-red-500 rounded-lg"><LogOut size={18} /></div> Esci
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* DESKTOP NAV */}
+                            <div className="flex items-center gap-2">
+                                {!activeOrderId && (
+                                    <div className="hidden md:flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+                                        <NavButtonDesktop icon={User} label="Profilo" active={view === 'dashboard'} onClick={() => setView('dashboard')} />
+                                        
+                                        {isManager && <NavButtonDesktop icon={Banknote} label="Pagamenti" active={view === 'payments'} onClick={() => setView('payments')} />}
+                                        
+                                        {!isManager && <NavButtonDesktop icon={ShoppingBag} label="Ordini" active={view === 'orders'} onClick={() => setView('orders')} />}
+                                        {isManager && <NavButtonDesktop icon={ShoppingCart} label="Spesa" active={view === 'shopping'} onClick={() => setView('shopping')} />}
+                                    </div>
+                                )}
+                            </div>
+                        </header>
+
+                        {/* MAIN CONTENT */}
+                        <main className="flex-1 overflow-y-auto p-4">
+                            {/* RENDER ORDER DETAIL OVERLAY IF ACTIVE */}
+                            {activeOrderId ? (
+                                <OrderDetail 
+                                    order={orders.find(o => o.id == activeOrderId)} 
+                                    users={users} 
+                                    currentUser={currentUser} 
+                                    isManager={isManager} 
+                                    onBack={() => setActiveOrderId(null)} 
+                                    onAdd={addItemToOrder} 
+                                    onRemove={removeItemFromOrder} 
+                                    onDelete={deleteOrder} 
+                                    onUpdateStatus={updateItemStatus} 
+                                    currentPricing={pricing} // Passaggio prezzi dinamici
+                                    allOrders={orders} 
+                                />
+                            ) : (
+                                // --- MAIN VIEW CONTENT ---
+                                <>
+                                    {view === 'dashboard' && (
+                                        <div className="space-y-6 animate-in">
+                                            {isManager ? (
+                                                <div className="space-y-6">
+                                                    <div className="grid grid-cols-2 gap-4">
+                                                        <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-5 rounded-2xl text-white shadow-lg">
+                                                            <div className="flex justify-between mb-4"><ArrowUpRight className="opacity-80" /><span className="text-xs bg-white/20 px-2 py-1 rounded-lg">Crediti</span></div>
+                                                            <p className="text-sm opacity-80">Devono darti</p><p className="text-3xl font-bold">€{managerStats.totalCredits.toFixed(2)}</p>
+                                                        </div>
+                                                        <div className="bg-white dark:bg-slate-800 border dark:border-slate-700 p-5 rounded-2xl">
+                                                            <div className="flex justify-between mb-4 text-slate-400"><PiggyBank /><span className="text-xs bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded-lg text-slate-500 dark:text-slate-300 font-bold">Totale</span></div>
+                                                            <p className="text-sm text-slate-400">Incassati</p><p className="text-3xl font-bold text-slate-800 dark:text-white">€{managerStats.totalCollected.toFixed(2)}</p>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* PROMEMORIA ORDINI ATTIVI */}
+                                                    <div className="mb-6">
+                                                        <h3 className="font-bold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2">
+                                                            <ShoppingBag size={20} className="text-indigo-500"/> Ordini Attivi
+                                                        </h3>
+                                                        {activeOrders.length === 0 ? (
+                                                            <p className="text-sm text-slate-400 italic">Nessun ordine attivo al momento.</p>
+                                                        ) : (
+                                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                                {activeOrders.map(order => (
+                                                                    <button 
+                                                                        key={order.id}
+                                                                        onClick={() => setActiveOrderId(order.id)}
+                                                                        className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 text-left hover:border-indigo-500 transition-colors group relative"
+                                                                    >
+                                                                        <div className="flex justify-between items-center mb-1">
+                                                                            <span className="font-bold text-slate-800 dark:text-white group-hover:text-indigo-500 transition-colors">{order.title}</span>
+                                                                            <span className="text-[10px] bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded-full text-slate-500">{order.date}</span>
+                                                                        </div>
+                                                                        <p className="text-xs text-slate-400">{(order.items || []).length} articoli</p>
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+
+                                                    {/* NUOVO: SEZIONE ULTIMO ORDINE / IN DISTRIBUZIONE */}
+                                                    {Object.entries(managerStats.lastOrderItemsByUser).length > 0 && (
+                                                        <div className="bg-indigo-50 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-900/30 p-5 rounded-2xl mt-6">
+                                                            <h3 className="font-bold text-indigo-800 dark:text-indigo-300 flex items-center gap-2 mb-4">
+                                                                <Package size={20} /> Ultimo Ordine / In Distribuzione
+                                                            </h3>
+                                                            <div className="space-y-4">
+                                                                {Object.entries(managerStats.lastOrderItemsByUser).map(([user, items]) => (
+                                                                    <div key={user} className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-indigo-50 dark:border-indigo-900/20">
+                                                                        <h4 className="font-bold text-slate-800 dark:text-white mb-2 border-b dark:border-slate-700 pb-1">{user}</h4>
+                                                                        <ul className="space-y-2">
+                                                                            {items.map((item, idx) => (
+                                                                                <li key={idx} className="text-sm text-slate-600 dark:text-slate-300 flex flex-col gap-1 p-2 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
+                                                                                    <div className="flex items-center gap-2 font-bold">
+                                                                                        <CheckCircle2 size={14} className="text-emerald-500" />
+                                                                                        <span className="truncate flex-1">{item.link || item.otherItems}</span>
+                                                                                    </div>
+                                                                                    <div className="flex flex-wrap gap-1 text-[10px] text-slate-500 dark:text-slate-400 ml-6">
+                                                                                        {item.liquidMl && <span className="bg-white dark:bg-slate-700 px-1.5 py-0.5 rounded border dark:border-slate-600">{item.liquidMl}ml</span>}
+                                                                                        {item.nicotineMl && <span className="bg-white dark:bg-slate-700 px-1.5 py-0.5 rounded border dark:border-slate-600">{item.nicotineMl}nic</span>}
+                                                                                        {item.vapeType && <span className="bg-white dark:bg-slate-700 px-1.5 py-0.5 rounded border dark:border-slate-600">{item.vapeType}</span>}
+                                                                                        {item.otherItems && !item.link && <span className="text-orange-500">{item.otherItems}</span>}
+                                                                                    </div>
+                                                                                </li>
+                                                                            ))}
+                                                                        </ul>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* NOTIFICHE PAGAMENTI */}
+                                                    {Object.entries(managerStats.pendingByUser).length > 0 && (
+                                                        <div className="space-y-3">
+                                                            <h3 className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2"><BellRing size={18} className="text-orange-500" /> Pagamenti da Confermare</h3>
+                                                            {Object.entries(managerStats.pendingByUser).map(([user, data]) => (
+                                                                <div key={user} className="bg-orange-50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-900/30 p-4 rounded-2xl flex justify-between items-center shadow-sm">
+                                                                    <div>
+                                                                        <p className="font-bold text-slate-800 dark:text-slate-200">{user}</p>
+                                                                        <p className="text-xs text-orange-600 dark:text-orange-400">Ha segnato come pagati {data.items.length} articoli</p>
+                                                                        <p className="font-bold text-lg text-slate-800 dark:text-white mt-1">€{data.total.toFixed(2)}</p>
+                                                                    </div>
+                                                                    <button 
+                                                                        onClick={() => confirmUserPayments(user, data.items)}
+                                                                        className="bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-4 py-2 rounded-xl font-bold text-sm shadow-lg hover:opacity-90 transition-opacity"
+                                                                    >
+                                                                        Conferma
+                                                                    </button>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-6">
+                                                    <div className="grid grid-cols-2 gap-4">
+                                                        <div className="bg-gradient-to-br from-indigo-500 to-blue-600 p-5 rounded-2xl text-white shadow-lg">
+                                                            <div className="flex justify-between mb-4"><List className="opacity-80" /><span className="text-xs bg-white/20 px-2 py-1 rounded-lg">Totale</span></div>
+                                                            <p className="text-sm opacity-80">Articoli</p><p className="text-3xl font-bold">{userStats.totalItems}</p>
+                                                        </div>
+                                                        
+                                                        {/* MODIFIED DEBT CARD WITH INTERACTIVE TICK */}
+                                                        <div className={`p-5 rounded-2xl border-2 transition-colors ${
+                                                            userStats.totalDebt > 0 
+                                                            ? 'bg-orange-50 dark:bg-orange-900/10 border-orange-100 dark:border-orange-900/30 text-orange-700 dark:text-orange-400' 
+                                                            : (userStats.pendingConfirmationDebt > 0 
+                                                                ? 'bg-emerald-5 dark:bg-emerald-900/10 border-emerald-100 dark:border-emerald-900/30 text-emerald-700 dark:text-emerald-400' 
+                                                                : 'bg-emerald-5 dark:bg-emerald-900/10 border-emerald-100 dark:border-emerald-900/30 text-emerald-700 dark:text-emerald-400')
+                                                        }`}>
+                                                            <div className="flex justify-between items-start mb-2">
+                                                                {/* INTERACTIVE TICK BUTTON */}
+                                                                {userStats.itemsToPay > 0 ? (
+                                                                    <button 
+                                                                        onClick={confirmAllPayments}
+                                                                        className="flex items-center justify-center p-2 -mt-2 -ml-2 rounded-xl hover:bg-orange-100 dark:hover:bg-orange-900/40 text-orange-600 dark:text-orange-300 transition-colors"
+                                                                        title="Clicca per confermare di aver pagato tutto"
+                                                                    >
+                                                                        <Square size={24} strokeWidth={2.5} />
+                                                                    </button>
+                                                                ) : (
+                                                                    <div className="flex items-center justify-center p-2 -mt-2 -ml-2 text-emerald-600 dark:text-emerald-400">
+                                                                        <CheckSquare size={24} strokeWidth={2.5} />
+                                                                    </div>
+                                                                )}
+                                                                <span className="text-xs font-bold uppercase px-2 py-1 rounded-lg bg-white/50 dark:bg-black/20 self-start">Stato</span>
+                                                            </div>
+                                                            
+                                                            {userStats.totalDebt > 0 ? (
+                                                                <>
+                                                                    <p className="text-sm opacity-80">Devi dare</p>
+                                                                    <p className="text-3xl font-bold">€{userStats.totalDebt.toFixed(2)}</p>
+                                                                    <p className="text-xs mt-1 opacity-70">{userStats.itemsToPay} articoli da saldare</p>
+                                                                </>
+                                                            ) : (
+                                                                userStats.pendingConfirmationDebt > 0 ? (
+                                                                    <>
+                                                                        <p className="text-sm opacity-80 font-bold">In attesa di conferma</p>
+                                                                        <p className="text-3xl font-bold">€{userStats.pendingConfirmationDebt.toFixed(2)}</p>
+                                                                        <p className="text-xs mt-1 opacity-70">Hai confermato il pagamento</p>
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <p className="text-sm opacity-80">Tutto saldato</p>
+                                                                        <p className="text-3xl font-bold">€0.00</p>
+                                                                        <p className="text-xs mt-1 opacity-70">Nessun debito</p>
+                                                                    </>
+                                                                )
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <h3 className="font-bold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2"><History size={18} className="text-indigo-500"/> I tuoi acquisti recenti</h3>
+                                                        <div className="space-y-3">
+                                                            {userStats.myItems.length === 0 && <p className="text-slate-400 text-sm italic">Non hai ancora comprato nulla.</p>}
+                                                            {userStats.myItems.slice().reverse().slice(0, 5).map((item, idx) => ( 
+                                                                <div key={idx} className="bg-white dark:bg-slate-800 border dark:border-slate-700 p-3 rounded-xl flex justify-between items-center shadow-sm">
+                                                                    <div className="overflow-hidden mr-2">
+                                                                        <p className="font-bold text-slate-800 dark:text-white truncate">{item.link || 'Oggetto senza link'}</p>
+                                                                        <p className="text-xs text-slate-500 dark:text-slate-400">{item.date}</p>
+                                                                    </div>
+                                                                    
+                                                                    {/* Action Buttons */}
+                                                                    <div className="flex items-center gap-2">
+                                                                        <button onClick={() => handleReorderSingle(item)} className="p-2 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-500 hover:text-blue-500 transition-colors" title="Riordina">
+                                                                            <RotateCcw size={16} />
+                                                                        </button>
+                                                                        <button onClick={() => openFavModal(item)} className="p-2 rounded-lg bg-pink-50 dark:bg-pink-900/20 text-pink-400 hover:text-pink-600 transition-colors" title="Preferiti">
+                                                                            <Heart size={16} />
+                                                                        </button>
+                                                                        <button onClick={() => handleDeleteHistoryItem(item)} className="p-2 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-400 hover:text-red-600 transition-colors" title="Elimina">
+                                                                            <Trash2 size={16} />
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* NUOVE VIEW GESTORE */}
+                                    {view === 'calculator' && isManager && <MixingCalculator onBack={() => setView('dashboard')} />}
+                                    {view === 'warehouse' && isManager && <WarehouseManager onBack={() => setView('dashboard')} />}
+
+                                    {/* NUOVE VIEW UTENTI */}
+                                    {view === 'favorites' && !isManager && <FavoritesSection onBack={() => setView('dashboard')} currentUser={currentUser} onAddToActiveOrder={handleReorderSingle} />}
+                                    {view === 'stats' && !isManager && <UserStatistics orders={orders} currentUser={currentUser} onBack={() => setView('dashboard')} />}
+
+                                    {view === 'payments' && isManager && (
+                                        <div className="pb-20 animate-in p-4">
+                                            <h2 className="text-xl font-bold mb-6 flex items-center gap-2"><Banknote className="text-orange-500"/> Conferma Pagamenti</h2>
+                                            
+                                            {Object.entries(managerStats.pendingByUser).length === 0 ? (
+                                                <div className="text-center py-20 text-slate-400">
+                                                    <CheckCircle size={48} className="mx-auto mb-4 opacity-20" />
+                                                    <p>Nessun pagamento in attesa di conferma.</p>
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-4">
+                                                    {Object.entries(managerStats.pendingByUser).map(([user, data]) => (
+                                                        <div key={user} className="bg-orange-50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-900/30 p-5 rounded-2xl shadow-sm">
+                                                            <div className="flex justify-between items-start mb-4">
+                                                                <div>
+                                                                    <h3 className="font-bold text-lg text-slate-800 dark:text-slate-200">{user}</h3>
+                                                                    <p className="text-sm text-orange-600 dark:text-orange-400 font-medium">Ha confermato {data.items.length} pagamenti</p>
+                                                                </div>
+                                                                <div className="text-right">
+                                                                    <span className="block text-xs uppercase text-slate-400 font-bold">Totale</span>
+                                                                    <span className="text-2xl font-bold text-slate-800 dark:text-white">€{data.total.toFixed(2)}</span>
+                                                                </div>
+                                                            </div>
+                                                            
+                                                            <div className="bg-white/50 dark:bg-black/20 rounded-xl p-3 mb-4 text-xs text-slate-500 dark:text-slate-400 max-h-32 overflow-y-auto">
+                                                                {data.items.map((item, idx) => (
+                                                                    <div key={idx} className="flex justify-between py-1 border-b border-slate-100 dark:border-slate-700/50 last:border-0">
+                                                                        <span className="truncate pr-2">{item.link || item.otherItems}</span>
+                                                                        <span className="font-mono">€{item.price}</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+
+                                                            <button 
+                                                                onClick={() => confirmUserPayments(user, data.items)}
+                                                                className="w-full bg-slate-900 dark:bg-white text-white dark:text-slate-900 py-3 rounded-xl font-bold shadow-lg hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+                                                            >
+                                                                <CheckCircle2 size={18} /> Conferma Ricezione
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {view === 'monthly-report' && <MonthlyReport orders={orders} currentUser={currentUser} onBack={() => setView('dashboard')} />}
+                                    
+                                    {view === 'manager-archive' && <OrderArchive orders={groupedArchivedOrders} currentUser={currentUser} isManager={isManager} onBack={() => setView('dashboard')} onDelete={deleteOrder} onReset={resetOrder} onClickOrder={setActiveOrderId} />}
+
+                                    {view === 'orders' && !isManager && (
+                                        <div className="space-y-6 animate-in">
+                                            {!activeOrderId ? (
+                                                <>
+                                                    <div className="flex justify-between items-center mb-2">
+                                                        <h2 className="text-xl font-bold text-slate-800 dark:text-white">Ordini Gruppo</h2>
+                                                        <button onClick={createOrder} className="bg-slate-900 dark:bg-white dark:text-slate-900 text-white py-2 px-4 rounded-xl flex items-center gap-2 text-sm font-bold"><Plus size={18} /> NUOVO</button>
+                                                    </div>
+                                                    <div className="space-y-6">
+                                                        {activeOrders.length === 0 && <p className="text-center text-slate-400 py-10">Nessun ordine attivo.</p>}
+                                                        {groupedActiveOrders.map(([monthYear, monthOrders]) => (
+                                                            <div key={monthYear}>
+                                                                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3 pl-1">{new Date(monthYear.split('/').reverse().join('-')).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}</h3>
+                                                                <div className="space-y-3">
+                                                                    {monthOrders.map(order => (
+                                                                        <OrderCard 
+                                                                            key={order.id} 
+                                                                            order={order} 
+                                                                            currentUser={currentUser}
+                                                                            onClick={(id) => setActiveOrderId(id)}
+                                                                            onDelete={deleteOrder}
+                                                                            onReset={resetOrder}
+                                                                            isManager={isManager}
+                                                                        />
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </>
+                                            ) : (
+                                                <OrderDetail 
+                                                    order={orders.find(o => o.id == activeOrderId)} 
+                                                    users={users} 
+                                                    currentUser={currentUser} 
+                                                    isManager={isManager} 
+                                                    onBack={() => setActiveOrderId(null)} 
+                                                    onAdd={addItemToOrder} 
+                                                    onRemove={removeItemFromOrder} 
+                                                    onDelete={deleteOrder} 
+                                                    onUpdateStatus={updateItemStatus} 
+                                                    currentPricing={pricing}
+                                                    allOrders={orders}
+                                                />
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {view === 'shopping' && isManager && (
+                                        <div className="animate-in space-y-6">
+                                            <div className="bg-emerald-600 text-white p-6 rounded-3xl shadow-xl"><h2 className="text-3xl font-bold flex items-center gap-2"><ShoppingCart /> Lista Spesa</h2><p className="text-emerald-100 text-sm mt-1">{shoppingList.filter(g => !g.allBought).length} prodotti da acquistare</p></div>
+                                            <div className="space-y-4">
+                                                {shoppingList.map((group, idx) => (
+                                                    <div key={idx} className={`bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-2xl p-4 shadow-sm ${group.allBought ? 'opacity-60' : 'border-emerald-100 dark:border-emerald-900/30 ring-1 ring-emerald-50 dark:ring-emerald-900/10'}`}>
+                                                        <div className="flex justify-between items-start mb-3">
+                                                            <div className="w-full overflow-hidden">
+                                                                <h3 className="font-bold text-lg truncate text-slate-800 dark:text-white">{group.count}x {group.link ? 'Prodotto' : 'Oggetto'}</h3>
+                                                            </div>
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            {group.items.map(item => (
+                                                                <ShoppingItem key={item.id} item={item} toggleBoughtStatus={toggleBoughtStatus} updateItemPrice={updateItemPrice} />
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                        </main>
+
+                        {/* MOBILE NAV: Show if NO active order overlay is open */}
+                        {!activeOrderId && (
+                            <nav className="fixed bottom-6 left-4 right-4 bg-white/90 dark:bg-slate-900/90 backdrop-blur-lg border border-slate-200 dark:border-slate-800 p-3 rounded-[2rem] shadow-2xl z-50 flex justify-around items-center md:hidden pb-safe">
+                                <NavButton icon={User} label="Profilo" active={view === 'dashboard' || view === 'monthly-report' || view === 'liquid-archive'} onClick={() => setView('dashboard')} />
+                                
+                                {isManager && <NavButton icon={Banknote} label="Pagamenti" active={view === 'payments'} onClick={() => setView('payments')} />}
+                                
+                                {!isManager && <NavButton icon={ShoppingBag} label="Ordini" active={view === 'orders'} onClick={() => setView('orders')} />}
+                                {isManager && <NavButton icon={ShoppingCart} label="Spesa" active={view === 'shopping'} onClick={() => setView('shopping')} />}
+                            </nav>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<OrderManager />);
+    </script>
+</body>
+</html>
