@@ -394,7 +394,6 @@
                 let totalSpent = 0;
                 let itemsCount = 0;
                 const typeCounts = {};
-                
                 orders.forEach(o => {
                     (o.items || []).filter(i => i.person === currentUser).forEach(i => {
                         totalSpent += (parseFloat(i.price) || 0);
@@ -405,7 +404,6 @@
                 });
                 return { totalSpent, itemsCount, typeCounts };
             }, [orders, currentUser]);
-
             return (
                 <div className="pb-20 animate-in p-4">
                     <div className="flex items-center gap-2 mb-6">
@@ -441,7 +439,6 @@
                 </div>
             );
         };
-
         // --- COMPONENTI NAVIGAZIONE ---
         const NavButton = ({ icon: Icon, label, active, onClick }) => (
             <button onClick={onClick} className={`flex flex-col items-center gap-1 w-16 transition-all duration-200 ${active ? 'text-blue-600 dark:text-blue-400 scale-110' : 'text-slate-400 dark:text-slate-500'}`}>
@@ -449,17 +446,14 @@
                 {active && <span className="text-[10px] font-bold mt-1">{label}</span>}
             </button>
         );
-
         const NavButtonDesktop = ({ icon: Icon, label, active, onClick }) => (
             <button onClick={onClick} className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors font-medium text-sm ${active ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-white/50 dark:hover:bg-slate-800'}`}>
                 <Icon size={18} /><span>{label}</span>
             </button>
         );
-
         // --- SUB-COMPONENT: SHOPPING ITEM ---
         const ShoppingItem = ({ item, toggleBoughtStatus, updateItemPrice }) => {
             const [showOther, setShowOther] = useState(false);
-
             return (
                 <div className="flex flex-col bg-slate-50 dark:bg-slate-700/50 p-4 rounded-xl text-sm border dark:border-slate-600 mb-2 shadow-sm">
                     {/* Header Item: Persona + Toggle Bought */}
@@ -474,7 +468,6 @@
                             {item.bought ? <CheckSquare size={16}/> : <Square size={16}/>} {item.bought ? 'PRESO' : 'DA PRENDERE'}
                         </button>
                     </div>
-
                     {/* Link Prodotto (Se presente) */}
                     {item.link && (
                         <div className="mb-3">
@@ -484,7 +477,6 @@
                             </a>
                         </div>
                     )}
-
                     {/* Specifiche Prodotto Grandi */}
                     <div className="flex flex-wrap gap-2 mb-2">
                         {item.liquidMl && (
@@ -502,8 +494,7 @@
                                 {item.vapeType}
                             </div>
                         )}
-                    </div>
-                    
+                    </div>  
                     {/* Sezione Altro (Toggle) */}
                     {item.otherItems && (
                         <div className="mt-1">
@@ -521,7 +512,6 @@
                             )}
                         </div>
                     )}
-
                     {/* MODIFICA PREZZO NELLA LISTA SPESA */}
                     <div className="mt-3 pt-3 border-t dark:border-slate-600 flex justify-end items-center gap-2">
                         <label className="text-xs font-bold text-slate-400 uppercase">Prezzo (€)</label>
@@ -537,17 +527,14 @@
                 </div>
             );
         };
-
         // --- COMPONENTI REPORT ---
-
         const MonthlyReport = ({ orders, currentUser, onBack }) => {
             const data = useMemo(() => {
                 const groups = {};
                 orders.forEach(order => {
                     const [day, month, year] = order.date.split('/');
                     const key = `${month}/${year}`;
-                    if(!groups[key]) groups[key] = { total: 0, items: [] };
-                    
+                    if(!groups[key]) groups[key] = { total: 0, items: [] };  
                     (order.items || []).forEach(item => {
                         if(item.person === currentUser) {
                             groups[key].total += (parseFloat(item.price) || 0);
@@ -561,7 +548,6 @@
                     return yb - ya || mb - ma;
                 });
             }, [orders, currentUser]);
-
             return (
                 <div className="pb-20 animate-in p-4">
                     <div className="flex items-center gap-2 mb-6">
@@ -583,14 +569,12 @@
                 </div>
             );
         };
-
         const LiquidArchive = ({ orders, currentUser, onBack }) => {
             const liquids = useMemo(() => {
                 return orders.flatMap(o => (o.items || []))
                     .filter(i => i.person === currentUser && (i.liquidMl || (i.link && i.link.toLowerCase().includes('liquido'))))
                     .map(i => ({...i, date: i.date || 'N/D'}));
             }, [orders, currentUser]);
-
             return (
                 <div className="pb-20 animate-in p-4">
                      <div className="flex items-center gap-2 mb-6">
@@ -614,7 +598,6 @@
                 </div>
             )
         }
-
         // --- COMPONENTE ARCHIVIO STORICO GENERALE ---
         const OrderArchive = ({ orders, currentUser, isManager, onBack, onDelete, onReset, onClickOrder }) => {
             return (
@@ -622,10 +605,8 @@
                     <div className="flex items-center gap-2 mb-6">
                         <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"><ArrowLeft/></button>
                         <h2 className="text-xl font-bold">Storico Ordini</h2>
-                    </div>
-                    
+                    </div>              
                     {orders.length === 0 && <p className="text-center text-slate-400 mt-10">Nessun ordine nello storico.</p>}
-
                     <div className="space-y-6">
                         {orders.map(([monthYear, monthOrders]) => (
                             <div key={monthYear}>
@@ -651,12 +632,10 @@
                 </div>
             );
         };
-
-        // --- COMPONENTE CARD ORDINE ---
+       // --- COMPONENTE CARD ORDINE ---
         const OrderCard = ({ order, currentUser, onClick, onDelete, onReset, isManager }) => {
             const myCount = (order.items || []).filter(i => i.person === currentUser).length;
             const isCreator = order.creator === currentUser;
-
             return (
                 <div 
                     onClick={() => onClick(order.id)}
@@ -696,7 +675,6 @@
                 </div>
             );
         }
-
         // --- COMPONENTE DETTAGLIO ORDINE ---
         const OrderDetail = ({ order, users, currentUser, isManager, onBack, onAdd, onRemove, onDelete, onUpdateStatus, currentPricing, allOrders }) => {
             const [person, setPerson] = useState(currentUser || (users && users.length > 0 ? users[0] : ''));
@@ -707,31 +685,25 @@
             const [otherItems, setOtherItems] = useState('');
             const [extraCost, setExtraCost] = useState(''); 
             const [customAromaPrice, setCustomAromaPrice] = useState(currentPricing.defaultAromaPrice);
-
             // Memoize estimated price using currentPricing prop
             const estimatedPrice = useMemo(() => {
                 const ml = parseFloat(liquidMl) || 0;
                 const nic = parseFloat(nicotineMl) || 0;
                 const extra = parseFloat(extraCost) || 0;
                 const aromaP = parseFloat(customAromaPrice) || currentPricing.defaultAromaPrice;
-
                 if (ml === 0) return 0; 
-
                 const nicBottles = (ml * nic) / currentPricing.nicotineBottleMg;
                 const costNic = nicBottles * currentPricing.nicotineBottlePrice;
                 const costAroma = aromaP;
                 const volNic = nicBottles * currentPricing.nicotineBottleVol;
                 const volBase = ml - currentPricing.aromaVol - volNic;
                 const costBase = volBase > 0 ? volBase * currentPricing.basePricePerMl : 0;
-
                 return costNic + costAroma + costBase + extra;
             }, [liquidMl, nicotineMl, extraCost, customAromaPrice, currentPricing]);
-
             if (!order) return (
                  <div className="pb-20 animate-in p-4">
                     <div className="flex justify-between items-center mb-4">
                         <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400"><ArrowLeft /></button>
-                        
                         {(isManager || (order && order.creator === currentUser)) && (
                             <button 
                                 onClick={() => onDelete(order.id)} 
@@ -746,15 +718,12 @@
                         <p>Ordine non trovato o in caricamento...</p>
                     </div>
                 </div>
-            );
-            
+            ); 
             const visibleItems = isManager ? (order.items || []) : (order.items || []).filter(i => i.person === currentUser);
             const isCreator = order.creator === currentUser;
-
             const handleSubmit = (e) => {
                 e.preventDefault();
-                if (!link.trim() && !otherItems.trim()) return alert("Inserisci un link o altro acquisto.");
-                
+                if (!link.trim() && !otherItems.trim()) return alert("Inserisci un link o altro acquisto.");  
                 onAdd(order.id, { 
                     person, 
                     link, 
@@ -765,20 +734,16 @@
                     otherItems, 
                     price: Math.ceil(estimatedPrice), 
                     userConfirmedPayment: false 
-                });
-                
+                });  
                 setLink(''); setLiquidMl(''); setNicotineMl(''); setOtherItems(''); setExtraCost(''); setCustomAromaPrice(currentPricing.defaultAromaPrice);
             };
-
             const handleSendOrder = () => {
                 alert("Ordine inviato correttamente!"); 
                 onBack();
             };
-
-            const itemsByPerson = isManager 
+             const itemsByPerson = isManager 
                 ? (order.items || []).reduce((acc, item) => { if(!acc[item.person]) acc[item.person] = []; acc[item.person].push(item); return acc; }, {}) 
                 : { [currentUser]: visibleItems };
-
             return (
                 <div className="pb-20 animate-in">
                     <div className="flex justify-between items-center mb-4">
@@ -794,8 +759,7 @@
                             </button>
                         )}
                     </div>
-                    <div className="bg-slate-800 dark:bg-black text-white p-5 rounded-2xl shadow-lg mb-6"><h2 className="text-xl font-bold">{order.title}</h2><p className="text-slate-400 text-sm mt-1">{order.date}</p></div>
-                    
+                    <div className="bg-slate-800 dark:bg-black text-white p-5 rounded-2xl shadow-lg mb-6"><h2 className="text-xl font-bold">{order.title}</h2><p className="text-slate-400 text-sm mt-1">{order.date}</p></div>   
                     <div className="bg-slate-50 dark:bg-slate-800 border dark:border-slate-700 p-4 rounded-2xl mb-8">
                          <div className="flex justify-between items-center mb-3">
                              <h3 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase flex items-center gap-2"><Plus size={16}/> Aggiungi Articolo</h3>
@@ -832,13 +796,11 @@
                             <button type="submit" className="bg-blue-600 text-white px-6 py-3 rounded-xl shadow-lg font-bold gap-2 mt-2 flex justify-center items-center"><Plus size={20} /> AGGIUNGI</button>
                         </form>
                     </div>
-
                     <div className="space-y-6">
                         {/* INTESTAZIONE LISTA PER GUEST */}
                         {!isManager && (visibleItems.length > 0) && (
                             <h3 className="text-lg font-bold text-slate-800 dark:text-white px-1">I tuoi articoli inseriti:</h3>
                         )}
-
                         {Object.entries(itemsByPerson).map(([pName, pItems]) => (
                             <div key={pName} className="border-b dark:border-slate-800 pb-4 last:border-0">
                                 {isManager && (
@@ -861,14 +823,12 @@
                                                         }
                                                         {item.otherItems && <p className="text-xs text-orange-500 font-medium flex items-center gap-1 mt-1"><Sparkles size={10} /> {item.otherItems}</p>}
                                                     </div>
-
                                                     {/* Colonna 2: Specifiche */}
                                                     <div className="flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400 md:justify-center">
                                                         {item.liquidMl && <span className="bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded">{item.liquidMl}ml</span>}
                                                         {item.nicotineMl && <span className="bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded">{item.nicotineMl}nic</span>}
                                                         {item.vapeType && <span className="bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded">{item.vapeType}</span>}
                                                     </div>
-
                                                     {/* Colonna 3: Azioni & Stato */}
                                                     <div className="flex items-center justify-between md:justify-end gap-3">
                                                          {/* Guest Confirmation Indicator */}
@@ -893,7 +853,6 @@
                                                         <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{item.liquidMl}ml • {item.nicotineMl}nic • {item.vapeType}</p>
                                                         {item.otherItems && <p className="text-xs text-orange-500 font-medium mt-1"><Sparkles size={10} inline /> {item.otherItems}</p>}
                                                     </div>
-                                                    
                                                     <div className="flex flex-col items-end gap-2">
                                                         {!item.paid ? (
                                                             item.userConfirmedPayment ? (
@@ -909,7 +868,6 @@
                                                         ) : (
                                                             <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-1 rounded-lg">Pagato</span>
                                                         )}
-
                                                         <button 
                                                             onClick={(e) => { e.stopPropagation(); onRemove(order.id, item.id); }} 
                                                             className="text-slate-300 hover:text-red-500 p-1"
@@ -925,7 +883,6 @@
                             </div>
                         ))}
                     </div>
-
                     {!isManager && (
                         <div className="mt-8 pt-6 border-t dark:border-slate-800">
                             <button 
@@ -941,44 +898,35 @@
                 </div>
             );
         };
-
         const OrderManager = () => {
             // --- STATE ---
             const [users, setUsers] = useState(['Gestore']);
             const [orders, setOrders] = useState([]);
             const [paymentRequests, setPaymentRequests] = useState({});
             const [pricing, setPricing] = useState(DEFAULT_PRICING); 
-
             const [currentUser, setCurrentUser] = useState(null);
             const [firebaseUser, setFirebaseUser] = useState(null);
             const [connectionError, setConnectionError] = useState(null); 
             const [showWelcome, setShowWelcome] = useState(false);
-            
             // Login State
             const [isLoggingInAsManager, setIsLoggingInAsManager] = useState(false);
             const [managerPassword, setManagerPassword] = useState('');
             const [loginError, setLoginError] = useState('');
-            
             const [view, setView] = useState('dashboard');
             const [activeOrderId, setActiveOrderId] = useState(null);
             const [newUserName, setNewUserName] = useState('');
             const [isAddingUser, setIsAddingUser] = useState(false);
             const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
             const [isPricingModalOpen, setIsPricingModalOpen] = useState(false);
-            
             // --- NEW STATES FOR FAVORITES ---
             const [favModalOpen, setFavModalOpen] = useState(false);
             const [itemToFav, setItemToFav] = useState(null);
-
             // Modal State
             const [modalConfig, setModalConfig] = useState({ isOpen: false, title: '', message: '', onConfirm: null, isDanger: false, confirmText: 'Conferma' });
-
             // Theme Hook
             const [theme, setTheme] = useTheme();
-
             // Ref for click outside profile menu
             const profileMenuRef = useRef(null);
-            
             useEffect(() => {
                 const handleClickOutside = (event) => {
                     if (profileMenuRef.current && !profileMenuRef.current.contains(event.target)) {
@@ -988,12 +936,10 @@
                 document.addEventListener("mousedown", handleClickOutside);
                 return () => document.removeEventListener("mousedown", handleClickOutside);
             }, []);
-
             // --- HELPER PER MODALE ---
             const showConfirm = (title, message, onConfirm, isDanger = false, confirmText = "Conferma") => {
                 setModalConfig({ isOpen: true, title, message, onConfirm: () => { onConfirm(); setModalConfig(prev => ({...prev, isOpen: false})); }, onCancel: () => setModalConfig(prev => ({...prev, isOpen: false})), isDanger, confirmText });
             };
-
             const showInfo = (title, message) => {
                 setModalConfig({ isOpen: true, title, message, onConfirm: () => setModalConfig(prev => ({...prev, isOpen: false})), onCancel: () => setModalConfig(prev => ({...prev, isOpen: false})), isDanger: false, confirmText: 'OK' });
             };
