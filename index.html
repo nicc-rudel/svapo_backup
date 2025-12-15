@@ -71,7 +71,7 @@
         import { 
             Plus, Trash2, Check, X, ArrowLeft, Share2, DollarSign, Users, 
             ShoppingBag, Wallet, Link as LinkIcon, Wind, 
-            LogOut, TrendingUp, History, User, ShoppingCart, ExternalLink, CheckSquare, Square, Lock, Beaker, ShoppingBasket, Send, List, FileSpreadsheet, Bell, BellRing, KeyRound, PiggyBank, ArrowUpRight, CloudLightning, MessageCircle, AlertCircle, RefreshCcw, MoreHorizontal, Moon, Sun, Monitor, AlertTriangle, Info, ChevronDown, Calendar, Droplet, CheckCircle2, Eye, EyeOff, CheckCircle, Package, Archive, Calculator, Banknote, ArrowRight, Loader2, Save, Settings, RotateCcw, Heart, Star, BarChart3, Box, Edit2,
+            LogOut, TrendingUp, History, User, ShoppingCart, ExternalLink, CheckSquare, Square, Lock, Beaker, ShoppingBasket, Send, List, FileSpreadsheet, Bell, BellRing, KeyRound, PiggyBank, ArrowUpRight, CloudLightning, MessageCircle, AlertCircle, RefreshCcw, MoreHorizontal, Moon, Sun, Monitor, AlertTriangle, Info, ChevronDown, Calendar, Droplet, CheckCircle2, Eye, EyeOff, CheckCircle, Package, Archive, Calculator, Banknote, ArrowRight, Loader2, Save, Settings, RotateCcw, Heart, Star, BarChart3, Box, Edit2, ClipboardList, Globe,
             // NUOVE ICONE PACCHETTO SVAPO
             Cloud, Zap, Droplets, FlaskConical, Sparkles, Layers, Syringe
         } from 'lucide-react';
@@ -283,6 +283,161 @@
 
         // --- SUB-VIEWS / PAGES ---
 
+        // --- WISHLIST COMPONENT ---
+        const Wishlist = ({ onBack, currentUser, activeOrderId, onAddToOrder }) => {
+            const [items, setItems] = useState([]);
+            const [newItemName, setNewItemName] = useState('');
+            const [newItemNote, setNewItemNote] = useState('');
+
+            // FIX: Usiamo percorso 'public' per evitare errori di permessi con i nomi utente stringa
+            useEffect(() => {
+                const unsub = onSnapshot(doc(db, 'artifacts', APP_ID, 'public', 'data', 'wishlists', currentUser), (s) => {
+                    if(s.exists()) setItems(s.data().items || []);
+                });
+                return () => unsub();
+            }, [currentUser]);
+
+            const addItem = async (e) => {
+                e.preventDefault();
+                if(!newItemName.trim()) return;
+                const newItem = {
+                    id: Date.now(),
+                    name: newItemName,
+                    note: newItemNote,
+                    date: new Date().toLocaleDateString('it-IT')
+                };
+                await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'wishlists', currentUser), { items: arrayUnion(newItem) }, { merge: true });
+                setNewItemName(''); setNewItemNote('');
+            };
+
+            const removeItem = async (item) => {
+                await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'wishlists', currentUser), { items: arrayRemove(item) }, { merge: true });
+            };
+
+            const moveToOrder = (item) => {
+                if(!activeOrderId) return;
+                
+                onAddToOrder({
+                    link: item.name,
+                    otherItems: item.note,
+                    liquidMl: '',
+                    nicotineMl: '',
+                    vapeType: '',
+                    price: 0
+                });
+            };
+
+            return (
+                <div className="pb-20 animate-in p-4">
+                    <div className="flex items-center gap-2 mb-6">
+                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"><ArrowLeft/></button>
+                        <h2 className="text-xl font-bold">Lista dei Desideri</h2>
+                    </div>
+
+                    <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl shadow-sm border dark:border-slate-700 mb-6">
+                        <form onSubmit={addItem} className="flex flex-col gap-2">
+                            <input 
+                                className="w-full bg-slate-100 dark:bg-slate-700 p-3 rounded-xl font-medium outline-none dark:text-white" 
+                                placeholder="Link o Nome prodotto..." 
+                                value={newItemName} 
+                                onChange={e => setNewItemName(e.target.value)} 
+                            />
+                            <div className="flex gap-2">
+                                <input 
+                                    className="flex-1 bg-slate-100 dark:bg-slate-700 p-3 rounded-xl font-medium outline-none text-sm dark:text-white" 
+                                    placeholder="Note (opzionale)" 
+                                    value={newItemNote} 
+                                    onChange={e => setNewItemNote(e.target.value)} 
+                                />
+                                <button type="submit" className="bg-indigo-600 text-white p-3 rounded-xl font-bold"><Plus/></button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div className="space-y-3">
+                        {items.map(item => (
+                            <div key={item.id} className="bg-white dark:bg-slate-800 p-4 rounded-xl border dark:border-slate-700 shadow-sm">
+                                <div className="flex justify-between items-start">
+                                    <div className="min-w-0 flex-1">
+                                        {item.name.startsWith('http') ? (
+                                            <a href={item.name} target="_blank" className="font-bold text-blue-600 dark:text-blue-400 truncate block hover:underline">{item.name}</a>
+                                        ) : (
+                                            <p className="font-bold text-slate-800 dark:text-white">{item.name}</p>
+                                        )}
+                                        {item.note && <p className="text-xs text-slate-500 mt-1">{item.note}</p>}
+                                        <p className="text-[10px] text-slate-400 mt-2">Aggiunto il {item.date}</p>
+                                    </div>
+                                    <button onClick={() => removeItem(item)} className="text-slate-300 hover:text-red-500 p-2"><Trash2 size={18}/></button>
+                                </div>
+                                {activeOrderId && (
+                                    <button 
+                                        onClick={() => moveToOrder(item)}
+                                        className="w-full mt-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-2 hover:bg-indigo-100 transition-colors"
+                                    >
+                                        <ShoppingCart size={14}/> Sposta nel carrello attivo
+                                    </button>
+                                )}
+                            </div>
+                        ))}
+                        {items.length === 0 && <p className="text-center text-slate-400 py-10">La tua lista è vuota.</p>}
+                    </div>
+                </div>
+            );
+        };
+
+        const FavoritesSection = ({ onBack, currentUser, onAddToActiveOrder }) => {
+            const [items, setItems] = useState([]);
+
+            useEffect(() => {
+                const unsub = onSnapshot(doc(db, 'artifacts', APP_ID, 'public', 'data', 'favorites', currentUser), (s) => {
+                    if(s.exists()) setItems(s.data().items || []);
+                });
+                return () => unsub();
+            }, [currentUser]);
+
+            const remove = async (item) => {
+                const ref = doc(db, 'artifacts', APP_ID, 'public', 'data', 'favorites', currentUser);
+                await updateDoc(ref, { items: arrayRemove(item) });
+            };
+
+            return (
+                <div className="pb-20 animate-in p-4">
+                    <div className="flex items-center gap-2 mb-6">
+                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"><ArrowLeft/></button>
+                        <h2 className="text-xl font-bold">Aromi Preferiti</h2>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 gap-3">
+                        {items.map(i => (
+                            <div key={i.id} className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border dark:border-slate-700">
+                                <div className="flex justify-between items-start mb-2">
+                                    <div>
+                                        <h3 className="font-bold text-lg text-slate-800 dark:text-white">{i.name}</h3>
+                                        <a href={i.link} target="_blank" className="text-xs text-blue-500 hover:underline truncate block max-w-[200px]">{i.link}</a>
+                                        <p className="text-xs text-slate-400 mt-1">{i.liquidMl}ml • {i.nicotineMl}nic • {i.vapeType}</p>
+                                    </div>
+                                    <button onClick={()=>remove(i)} className="text-slate-400 hover:text-red-500 p-1"><Trash2 size={18}/></button>
+                                </div>
+                                <button 
+                                    onClick={() => onAddToActiveOrder(i)}
+                                    className="w-full mt-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-2 hover:bg-indigo-100 dark:hover:bg-indigo-900/50"
+                                >
+                                    <Plus size={14}/> Aggiungi all'ordine attivo
+                                </button>
+                            </div>
+                        ))}
+                        {items.length === 0 && (
+                            <div className="text-center py-10 text-slate-400">
+                                <Heart size={48} className="mx-auto mb-3 opacity-20"/>
+                                <p>Nessun aroma preferito.</p>
+                                <p className="text-xs mt-1">Aggiungili cliccando il cuore sui tuoi acquisti recenti.</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
         const NoticeManager = ({ onBack, notices, showConfirm }) => {
             const [text, setText] = useState('');
             const [editingId, setEditingId] = useState(null);
@@ -295,7 +450,6 @@
                     }, {merge: true});
                 } catch(e) {
                     console.error(e);
-                    // Usa console.error invece di alert per evitare blocchi
                 }
             };
 
@@ -943,188 +1097,6 @@
             );
         };
 
-        const FavoritesSection = ({ onBack, currentUser, onAddToActiveOrder }) => {
-            const [items, setItems] = useState([]);
-
-            useEffect(() => {
-                const unsub = onSnapshot(doc(db, 'artifacts', APP_ID, 'public', 'data', 'favorites', currentUser), (s) => {
-                    if(s.exists()) setItems(s.data().items || []);
-                });
-                return () => unsub();
-            }, [currentUser]);
-
-            const remove = async (item) => {
-                const ref = doc(db, 'artifacts', APP_ID, 'public', 'data', 'favorites', currentUser);
-                await updateDoc(ref, { items: arrayRemove(item) });
-            };
-
-            return (
-                <div className="pb-20 animate-in p-4">
-                    <div className="flex items-center gap-2 mb-6">
-                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"><ArrowLeft/></button>
-                        <h2 className="text-xl font-bold">Aromi Preferiti</h2>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 gap-3">
-                        {items.map(i => (
-                            <div key={i.id} className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border dark:border-slate-700">
-                                <div className="flex justify-between items-start mb-2">
-                                    <div>
-                                        <h3 className="font-bold text-lg text-slate-800 dark:text-white">{i.name}</h3>
-                                        <a href={i.link} target="_blank" className="text-xs text-blue-500 hover:underline truncate block max-w-[200px]">{i.link}</a>
-                                        <p className="text-xs text-slate-400 mt-1">{i.liquidMl}ml • {i.nicotineMl}nic • {i.vapeType}</p>
-                                    </div>
-                                    <button onClick={()=>remove(i)} className="text-slate-400 hover:text-red-500 p-1"><Trash2 size={18}/></button>
-                                </div>
-                                <button 
-                                    onClick={() => onAddToActiveOrder(i)}
-                                    className="w-full mt-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-2 hover:bg-indigo-100 dark:hover:bg-indigo-900/50"
-                                >
-                                    <Plus size={14}/> Aggiungi all'ordine attivo
-                                </button>
-                            </div>
-                        ))}
-                        {items.length === 0 && (
-                            <div className="text-center py-10 text-slate-400">
-                                <Heart size={48} className="mx-auto mb-3 opacity-20"/>
-                                <p>Nessun aroma preferito.</p>
-                                <p className="text-xs mt-1">Aggiungili cliccando il cuore sui tuoi acquisti recenti.</p>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            );
-        };
-
-        const UserStatistics = ({ orders, currentUser, onBack }) => {
-            const stats = useMemo(() => {
-                let totalSpent = 0;
-                let itemsCount = 0;
-                const typeCounts = {};
-                
-                orders.forEach(o => {
-                    (o.items || []).filter(i => i.person === currentUser).forEach(i => {
-                        totalSpent += (parseFloat(i.price) || 0);
-                        itemsCount++;
-                        const type = i.vapeType || 'Altro';
-                        typeCounts[type] = (typeCounts[type] || 0) + 1;
-                    });
-                });
-                return { totalSpent, itemsCount, typeCounts };
-            }, [orders, currentUser]);
-
-            return (
-                <div className="pb-20 animate-in p-4">
-                    <div className="flex items-center gap-2 mb-6">
-                        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"><ArrowLeft/></button>
-                        <h2 className="text-xl font-bold">Le tue Statistiche</h2>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4 mb-6">
-                        <div className="bg-blue-500 text-white p-5 rounded-2xl shadow-lg">
-                            <p className="text-blue-100 text-sm mb-1">Spesa Totale</p>
-                            <p className="text-3xl font-bold">€{stats.totalSpent.toFixed(2)}</p>
-                        </div>
-                        <div className="bg-indigo-500 text-white p-5 rounded-2xl shadow-lg">
-                            <p className="text-indigo-100 text-sm mb-1">Articoli Presi</p>
-                            <p className="text-3xl font-bold">{stats.itemsCount}</p>
-                        </div>
-                    </div>
-                    <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border dark:border-slate-700">
-                        <h3 className="font-bold mb-4">Preferenze di Svapo</h3>
-                        <div className="space-y-3">
-                            {Object.entries(stats.typeCounts).map(([type, count]) => (
-                                <div key={type}>
-                                    <div className="flex justify-between text-sm mb-1">
-                                        <span>{type}</span>
-                                        <span className="font-bold">{count}</span>
-                                    </div>
-                                    <div className="h-2 w-full bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                                        <div className="h-full bg-blue-500" style={{width: `${(count / stats.itemsCount) * 100}%`}}></div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        const ShoppingItem = ({ item, toggleBoughtStatus, updateItemPrice }) => {
-            const [showOther, setShowOther] = useState(false);
-
-            return (
-                <div className="flex flex-col bg-slate-50 dark:bg-slate-700/50 p-4 rounded-xl text-sm border dark:border-slate-600 mb-2 shadow-sm">
-                    <div className="flex justify-between items-center mb-3">
-                         <span className="font-bold text-lg text-slate-800 dark:text-slate-100">{item.person}</span>
-                         <button 
-                            onClick={() => toggleBoughtStatus(item.orderId, item.id)} 
-                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${item.bought 
-                                ? 'bg-emerald-500 text-white border-emerald-500 shadow-emerald-500/30 shadow-md' 
-                                : 'bg-white dark:bg-slate-700 dark:text-white border-slate-300 dark:border-slate-500 hover:bg-slate-100 dark:hover:bg-slate-600'}`}
-                        >
-                            {item.bought ? <CheckSquare size={16}/> : <Square size={16}/>} {item.bought ? 'PRESO' : 'DA PRENDERE'}
-                        </button>
-                    </div>
-
-                    {item.link && (
-                        <div className="mb-3">
-                            <a href={item.link} target="_blank" className="flex items-center gap-2 text-xs bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-3 py-2 rounded-lg font-bold w-full truncate border border-blue-100 dark:border-blue-900/50 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors">
-                                <ExternalLink size={14} className="flex-shrink-0" /> 
-                                <span className="truncate">{item.link}</span>
-                            </a>
-                        </div>
-                    )}
-
-                    <div className="flex flex-wrap gap-2 mb-2">
-                        {item.liquidMl && (
-                            <div className="bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 px-3 py-1.5 rounded-lg font-bold border border-blue-200 dark:border-blue-800 flex items-center gap-1">
-                                <Droplets size={14} /> {item.liquidMl}ml
-                            </div>
-                        )}
-                        {item.nicotineMl && (
-                            <div className="bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-200 px-3 py-1.5 rounded-lg font-bold border border-purple-200 dark:border-purple-800 flex items-center gap-1">
-                                <Zap size={14} /> {item.nicotineMl}
-                            </div>
-                        )}
-                        {item.vapeType && (
-                            <div className="bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg font-bold border border-slate-300 dark:border-slate-500">
-                                {item.vapeType}
-                            </div>
-                        )}
-                    </div>
-                    
-                    {item.otherItems && (
-                        <div className="mt-1">
-                            <button 
-                                onClick={() => setShowOther(!showOther)} 
-                                className="text-xs bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 px-3 py-1.5 rounded-lg font-bold flex items-center gap-2 border border-orange-200 dark:border-orange-800 hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors w-full md:w-auto justify-center md:justify-start"
-                            >
-                                <Sparkles size={14}/> {showOther ? 'Nascondi Altro' : 'Vedi Altro'} {showOther ? <ChevronDown size={14} className="rotate-180"/> : <ChevronDown size={14}/>}
-                            </button>
-                            {showOther && (
-                                <div className="mt-2 p-3 bg-orange-50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-900/30 rounded-lg text-sm text-orange-900 dark:text-orange-100 animate-in fade-in slide-in-from-top-2">
-                                    <p className="font-bold mb-1 text-xs uppercase opacity-70">Note aggiuntive:</p>
-                                    {item.otherItems}
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    <div className="mt-3 pt-3 border-t dark:border-slate-600 flex justify-end items-center gap-2">
-                        <label className="text-xs font-bold text-slate-400 uppercase">Prezzo (€)</label>
-                        <input 
-                            type="number" 
-                            step="0.01" 
-                            inputMode="decimal"
-                            className="w-24 bg-white dark:bg-slate-900 border dark:border-slate-500 rounded-lg px-2 py-1.5 text-right font-mono font-bold text-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none" 
-                            value={item.price} 
-                            onChange={(e) => updateItemPrice(item.orderId, item.id, e.target.value)} 
-                        />
-                    </div>
-                </div>
-            );
-        };
-
         const MonthlyReport = ({ orders, currentUser, onBack }) => {
             const data = useMemo(() => {
                 const groups = {};
@@ -1551,7 +1523,14 @@
             const [orders, setOrders] = useState([]);
             const [paymentRequests, setPaymentRequests] = useState({});
             const [pricing, setPricing] = useState(DEFAULT_PRICING); 
-            const [notices, setNotices] = useState([]); // CHANGED: notices array instead of single string
+            const [notices, setNotices] = useState([]); 
+            const [quickLinks, setQuickLinks] = useState([{ name: 'Svapoebasta', url: 'https://www.svapoebasta.com/' }]); // DEFAULT LINK
+
+            // --- NUOVI STATI PER GESTIONE LINK ---
+            const [isAddingLink, setIsAddingLink] = useState(false);
+            const [newLinkName, setNewLinkName] = useState('');
+            const [newLinkUrl, setNewLinkUrl] = useState('');
+            // -------------------------------------
 
             const [currentUser, setCurrentUser] = useState(null);
             const [firebaseUser, setFirebaseUser] = useState(null);
@@ -1673,8 +1652,9 @@
                             if (data.users) setUsers(data.users);
                             if (data.paymentRequests) setPaymentRequests(data.paymentRequests);
                             if (data.pricing) setPricing(data.pricing);
+                            if (data.quickLinks) setQuickLinks(data.quickLinks); // LOAD LINKS
                             
-                            // LOAD NOTICES - Handle Legacy String
+                            // LOAD NOTICES
                             if (data.notices) {
                                 setNotices(data.notices);
                             } else if (data.noticeMessage) {
@@ -1683,7 +1663,14 @@
                                 setNotices([]);
                             }
                         } else {
-                            setDoc(docSettings, { users: ['Gestore'], paymentRequests: {}, pricing: DEFAULT_PRICING, notices: [] }, { merge: true });
+                            // Initial setup with Svapoebasta
+                            setDoc(docSettings, { 
+                                users: ['Gestore'], 
+                                paymentRequests: {}, 
+                                pricing: DEFAULT_PRICING, 
+                                notices: [],
+                                quickLinks: [{ name: 'Svapoebasta', url: 'https://www.svapoebasta.com/' }]
+                            }, { merge: true });
                         }
                     }, (err) => {
                         console.error("Settings Listener Error:", err);
@@ -2126,6 +2113,61 @@
                 );
             };
 
+            // --- NUOVE FUNZIONI GESTIONE LINK (SENZA PROMPT) ---
+            const toggleAddLink = () => {
+                if (!isManager) return;
+                setIsAddingLink(!isAddingLink);
+                setNewLinkName('');
+                setNewLinkUrl('');
+            };
+
+            const saveNewLink = async (e) => {
+                e.preventDefault();
+                if (!newLinkName.trim() || !newLinkUrl.trim()) return;
+
+                let url = newLinkUrl.trim();
+                // Aggiungi protocollo se manca
+                if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                    url = 'https://' + url;
+                }
+
+                const newLink = { name: newLinkName.trim(), url: url };
+                const updatedLinks = [...quickLinks, newLink];
+                
+                try {
+                    await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'global'), { 
+                        quickLinks: updatedLinks 
+                    }, {merge: true});
+                    setIsAddingLink(false);
+                    setNewLinkName('');
+                    setNewLinkUrl('');
+                } catch(e) {
+                    showInfo("Errore", "Impossibile aggiungere il link.");
+                }
+            };
+
+            const removeQuickLink = async (linkToRemove) => {
+                if (!isManager) return;
+                // Usa showConfirm invece di confirm() nativo
+                showConfirm(
+                    "Rimuovi Sito",
+                    `Vuoi rimuovere ${linkToRemove.name} dai siti consigliati?`,
+                    async () => {
+                        const updatedLinks = quickLinks.filter(l => l.url !== linkToRemove.url);
+                        try {
+                            await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'settings', 'global'), { 
+                                quickLinks: updatedLinks 
+                            }, {merge: true});
+                        } catch(e) {
+                            showInfo("Errore", "Impossibile rimuovere il link.");
+                        }
+                    },
+                    true,
+                    "Rimuovi"
+                );
+            }
+            // ---------------------------------------------------
+
             // --- UI RENDER ---
             if (!isConfigured) return <div className="p-10 text-center">Configurazione mancante</div>;
             if (connectionError) return <div className="p-10 text-center text-red-500">Errore: {connectionError}</div>;
@@ -2193,6 +2235,69 @@
                 </div>
             );
 
+            // --- HELPER RENDER FOR QUICK LINKS ---
+            const renderQuickLinks = () => (
+                <div className="mb-4">
+                    <div className="flex justify-between items-center mb-2">
+                        <h3 className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                            <Globe size={18} className="text-blue-500"/> Siti Consigliati
+                        </h3>
+                        {isManager && (
+                            <button onClick={toggleAddLink} className={`text-xs p-1.5 rounded-lg transition-colors ${isAddingLink ? 'bg-red-100 text-red-500' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-blue-500'}`}>
+                                {isAddingLink ? <X size={14}/> : <Plus size={14}/>}
+                            </button>
+                        )}
+                    </div>
+
+                    {/* FORM INSERIMENTO LINK */}
+                    {isAddingLink && (
+                        <form onSubmit={saveNewLink} className="mb-3 bg-slate-50 dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 animate-in fade-in">
+                            <div className="flex flex-col gap-2">
+                                <input 
+                                    autoFocus
+                                    type="text" 
+                                    placeholder="Nome (es. SvapoDream)" 
+                                    className="w-full px-3 py-2 rounded-lg text-sm border dark:border-slate-600 dark:bg-slate-700 dark:text-white outline-none"
+                                    value={newLinkName}
+                                    onChange={e => setNewLinkName(e.target.value)}
+                                />
+                                <div className="flex gap-2">
+                                    <input 
+                                        type="text" 
+                                        placeholder="URL (es. svapodream.it)" 
+                                        className="flex-1 px-3 py-2 rounded-lg text-sm border dark:border-slate-600 dark:bg-slate-700 dark:text-white outline-none"
+                                        value={newLinkUrl}
+                                        onChange={e => setNewLinkUrl(e.target.value)}
+                                    />
+                                    <button type="submit" className="bg-blue-600 text-white px-4 rounded-lg font-bold text-sm">OK</button>
+                                </div>
+                            </div>
+                        </form>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-3">
+                        {quickLinks.map((link, i) => (
+                            <div key={i} className="relative group">
+                                <a href={link.url} target="_blank" className="flex items-center gap-3 p-3 bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl shadow-sm hover:shadow-md hover:border-blue-200 transition-all">
+                                    <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center text-blue-500">
+                                        <ShoppingCart size={16}/>
+                                    </div>
+                                    <span className="font-bold text-sm text-slate-700 dark:text-slate-200 truncate">{link.name}</span>
+                                </a>
+                                {isManager && (
+                                    <button 
+                                        onClick={(e) => { e.preventDefault(); removeQuickLink(link); }}
+                                        className="absolute -top-2 -right-2 bg-red-100 dark:bg-red-900/50 text-red-500 rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                                    >
+                                        <X size={12}/>
+                                    </button>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+
             return (
                 <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 font-sans pb-24 md:pb-0 relative">
                     <ConfirmDialog {...modalConfig} />
@@ -2230,6 +2335,9 @@
                                         {/* MENU ITEMS */}
                                         {!isManager && (
                                             <>
+                                                <button onClick={() => { setView('wishlist'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
+                                                    <div className="p-2 bg-rose-100 dark:bg-rose-900/30 text-rose-600 rounded-lg"><ClipboardList size={18}/></div> Wishlist
+                                                </button>
                                                 <button onClick={() => { setView('monthly-report'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium">
                                                     <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 rounded-lg"><Calendar size={18}/></div> Resoconto Spese
                                                 </button>
@@ -2321,6 +2429,9 @@
                                     {view === 'dashboard' && (
                                         <div className="space-y-6 animate-in">
                                             
+                                            {/* SITI CONSIGLIATI: SOLO PER GESTORE QUI (IN ALTO) */}
+                                            {isManager && renderQuickLinks()}
+
                                             {/* --- SEZIONE BACHECA AVVISI --- */}
                                             {notices.length > 0 && (
                                                 <div className="space-y-2">
@@ -2543,6 +2654,9 @@
                                                             ))}
                                                         </div>
                                                     </div>
+
+                                                    {/* SITI CONSIGLIATI: SOLO PER UTENTI QUI (IN BASSO) */}
+                                                    {!isManager && renderQuickLinks()}
                                                 </div>
                                             )}
                                         </div>
@@ -2554,6 +2668,7 @@
                                     {view === 'warehouse' && isManager && <WarehouseManager onBack={() => setView('dashboard')} />}
 
                                     {/* NUOVE VIEW UTENTI */}
+                                    {view === 'wishlist' && !isManager && <Wishlist onBack={() => setView('dashboard')} currentUser={currentUser} activeOrderId={activeOrderId} onAddToOrder={handleReorderSingle} />}
                                     {view === 'favorites' && !isManager && <FavoritesSection onBack={() => setView('dashboard')} currentUser={currentUser} onAddToActiveOrder={handleReorderSingle} />}
                                     {view === 'stats' && !isManager && <UserStatistics orders={orders} currentUser={currentUser} onBack={() => setView('dashboard')} />}
                                     
